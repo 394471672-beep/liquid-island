@@ -17,8 +17,9 @@ import time
 
 import objc
 from AppKit import (
-    NSApplication, NSApplicationActivationPolicyAccessory, NSImage, NSMenu,
-    NSMenuItem, NSObject, NSStatusBar, NSVariableStatusItemLength,
+    NSApplication, NSApplicationActivationPolicyAccessory, NSImage, NSLeftMouseDownMask,
+    NSMenu, NSMenuItem, NSObject, NSRightMouseDownMask, NSStatusBar,
+    NSVariableStatusItemLength,
 )
 from Foundation import NSDistributedNotificationCenter, NSTimer
 from PyObjCTools import AppHelper
@@ -278,6 +279,27 @@ class AppAgent(NSObject):
         menu.addItem_(it6)
 
         self.status_item.setMenu_(menu)
+        # ⚠️ 默认 status item 菜单只在【左键】弹出；鼠标用户右键没有任何反应。
+        # 这里同时让右键也弹出同一个菜单：把按钮的 action 接到「弹出菜单」，
+        # 并让左/右按下都触发该 action（sendActionOn_ 同时挂两个掩码）。
+        self._status_menu = menu
+        try:
+            btn.setAction_("actStatusClick_")
+            btn.setTarget_(self)
+            btn.sendActionOn_(NSLeftMouseDownMask | NSRightMouseDownMask)
+            # 去掉 setMenu_ 的默认左键行为，避免两次弹出；统一走 action。
+            self.status_item.setMenu_(None)
+        except Exception as e:
+            print("[main] 右键菜单适配失败，回退左键:", e, flush=True)
+            self.status_item.setMenu_(menu)
+
+    @objc.python_method
+    def actStatusClick_(self, sender):
+        """左键/右键点击菜单栏图标 → 弹出同一个菜单。"""
+        try:
+            self.status_item.popUpStatusItemMenu_(self._status_menu)
+        except Exception as e:
+            print("[main] 弹出菜单失败:", e, flush=True)
 
     # ── 菜单动作 ──────────────────────────────────────────
     def actPrefs_(self, sender):
@@ -497,6 +519,29 @@ class AppAgent(NSObject):
             if self._slow_tick % 40 == 0 and self.island_ctrl is not None:
                 try:
                     self.island_ctrl.sync_screens()
+                except Exception:
+                    pass
+
+            # 每 ≈10 秒：把真实运行状态写到文件，方便排查「实时显示」问题
+            # （权限到底生效没、窗口枚举到底看不看得见）。不走通知，避免
+            # 分布式通知 selector 暴露问题导致崩溃。
+            if self._slow_tick % 200 == 0:
+                try:
+                    import json as _json
+                    info = {
+                        "version": APP_VERSION,
+                        "ax_perm": bool(core.has_ax_perm()),
+                        "screen_perm": bool(core.has_screen_perm()),
+                        "running_apps": len(core.running_apps()),
+                        "windows_all": len(core.list_windows(scope="all-windows")),
+                        "switcher_items": len(getattr(self.sw, "items", []) or []),
+                        "island_apps_n": (getattr(self.island_ctrl, "n", None)
+                                          if self.island_ctrl else None),
+                        "hotkey_running": bool(self.mon.running),
+                    }
+                    with open(os.path.expanduser(
+                            "~/Library/Logs/liquid-island.state.json"), "w") as f:
+                        _json.dump(info, f, ensure_ascii=False, indent=2)
                 except Exception:
                     pass
 
