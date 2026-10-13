@@ -8,6 +8,7 @@
 
 事件循环只有这一个（AppHelper.runEventLoop），所以两个浮层共存在一个进程里。
 """
+import fcntl
 import os
 import signal
 import subprocess
@@ -481,29 +482,82 @@ class AppAgent(NSObject):
             print("[main] tick 异常:", e, flush=True)
 
 
-def _already_running():
-    """单实例保护。
+LOCK_PATH = os.path.join(cfgmod.CONFIG_DIR, "instance.lock")
+_LOCK_FH = None
 
-    开机自启的 LaunchAgent 直接跑 `python main.py`，绕过了
-    /Applications/液态岛.app 启动器里的 pgrep 去重；这里补一道，
-    否则登录时可能同时存在「上次没退干净的」和「新拉起的」两个进程，
-    两个浮层两套热键互相打架。
+# 命令行里只要出现任一条，就认定是「另一个液态岛」
+_INSTANCE_PATTERNS = (
+    "liquid_island/main.py",          # 源码直跑
+    "Contents/MacOS/Liquid Island",   # 打包版（/Applications、dist、dmg 都命中）
+    "液态岛.app/Contents/MacOS",
+)
+
+
+def _other_instances():
+    """找出别的液态岛进程 —— 不管它是从源码、/Applications 还是 dmg 里起的。
+
+    为什么原来会漏：老代码只 pgrep `liquid_island/main.py`，而打包后进程的
+    命令行是 `/Applications/液态岛.app/Contents/MacOS/Liquid Island`，
+    跟源码路径八竿子打不着；从 dmg 里直接双击又是 `/Volumes/液态岛/...`
+    这第三条路径。于是三条路各起一个互不认识的实例：菜单栏三个图标、
+    三个岛叠在一起、还各抢一份系统权限 —— 用户看到的就是
+    「右上角怎么有三个液态岛」。
     """
     me = os.getpid()
+    hits = []
     try:
-        out = subprocess.run(["pgrep", "-f", "liquid_island/main.py"],
+        out = subprocess.run(["ps", "-ax", "-o", "pid=,command="],
                              capture_output=True, text=True, timeout=5).stdout
     except Exception:
+        return hits
+    for line in out.splitlines():
+        pid_str, _, cmd = line.strip().partition(" ")
+        if not pid_str.isdigit():
+            continue
+        pid = int(pid_str)
+        if pid == me:
+            continue
+        if any(p in cmd for p in _INSTANCE_PATTERNS):
+            hits.append((pid, cmd.strip()[:110]))
+    return hits
+
+
+def _acquire_lock():
+    """文件锁：比 pgrep 可靠（进程被 kill 时内核自动释放，不会留幽灵锁）。"""
+    global _LOCK_FH
+    try:
+        os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
+        _LOCK_FH = open(LOCK_PATH, "w")
+        fcntl.flock(_LOCK_FH, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _LOCK_FH.write(str(os.getpid()))
+        _LOCK_FH.flush()
+        return True
+    except OSError:
         return False
-    for tok in out.split():
-        if tok.isdigit() and int(tok) != me:
-            return True
-    return False
+
+
+def _notify_existing():
+    """已经在跑了：让那个实例把设置面板打开。
+
+    否则用户再点一次 App 就是彻头彻尾的「毫无反应」——这正是之前最让人
+    抓狂的地方。菜单栏应用没有主窗口，得给个看得见的反馈。
+    """
+    try:
+        NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
+            "com.liquidisland.action", "openprefs")
+    except Exception as e:
+        print("[main] 通知已有实例失败:", e, flush=True)
 
 
 def main():
-    if _already_running():
-        print("[main] 已有实例在跑，本次启动放弃", flush=True)
+    others = _other_instances()
+    if others:
+        print("[main] 已有实例在跑，本次启动放弃：", others, flush=True)
+        _notify_existing()
+        return
+    if not _acquire_lock():
+        print("[main] 单实例锁被占用，本次启动放弃", flush=True)
+        _notify_existing()
         return
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)

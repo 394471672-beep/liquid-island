@@ -347,6 +347,12 @@ def icon_cgimage(app):
 
 _SCREEN_PERM = None
 _AX_PERM = None
+# 和 core.py 同一个坑：权限一旦查过就永久记住的话，用户在系统设置里勾完回来，
+# 这里还是「没权限」的旧结论 → 缩略图死活不出、岛点了没反应。
+# 所以加 3 秒 TTL，到点自己重查，授权后不用重启应用。
+_PERM_TTL = 3.0
+_AX_PERM_AT = 0.0
+_SCREEN_PERM_AT = 0.0
 
 
 def has_ax_perm():
@@ -355,13 +361,15 @@ def has_ax_perm():
     **没有权限时必须跳过窗口枚举**：AX 调用会一直等目标应用响应，
     实测每次要卡 2 秒超时，鼠标一动就卡住整个界面。
     """
-    global _AX_PERM
-    if _AX_PERM is None:
+    global _AX_PERM, _AX_PERM_AT
+    now = time.time()
+    if _AX_PERM is None or now - _AX_PERM_AT > _PERM_TTL:
         try:
             import ApplicationServices as AS
             _AX_PERM = bool(AS.AXIsProcessTrusted())
         except Exception:
             _AX_PERM = False
+        _AX_PERM_AT = now
     return _AX_PERM
 
 
@@ -371,12 +379,14 @@ def has_screen_perm():
     没有权限时调用 CGWindowListCreateImage 不会报错，
     而是**静默挂起进程**（实测卡死主循环），所以必须先问清楚。
     """
-    global _SCREEN_PERM
-    if _SCREEN_PERM is None:
+    global _SCREEN_PERM, _SCREEN_PERM_AT
+    now = time.time()
+    if _SCREEN_PERM is None or now - _SCREEN_PERM_AT > _PERM_TTL:
         try:
             _SCREEN_PERM = bool(Quartz.CGPreflightScreenCaptureAccess())
         except Exception:
             _SCREEN_PERM = False
+        _SCREEN_PERM_AT = now
     return _SCREEN_PERM
 
 

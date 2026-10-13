@@ -82,6 +82,7 @@ class OnboardController(NSObject):
         self.done_btn = None
         self.timer = None
         self.on_finish = None        # 权限状态变了，main 可以据此重试热键
+        self._auto_closing = False   # 两项都开了之后自动收起（只触发一次）
         return self
 
     # ── 建窗口 ────────────────────────────────────────────
@@ -198,6 +199,10 @@ class OnboardController(NSObject):
         core.refresh_perm_cache()
         self.refresh()
 
+    def obAutoClose_(self, timer):
+        """两项权限都到齐：自动收起引导页（1.5 秒后，让用户看见灯变绿）。"""
+        self.finish(mark=True)
+
     @objc.python_method
     def refresh(self):
         ax = core.has_ax_perm()
@@ -208,6 +213,12 @@ class OnboardController(NSObject):
         if ax and sc:
             self.hint.setStringValue_("两项权限都已开启，可以开始使用了。")
             self.done_btn.setKeyEquivalent_("\r")
+            # 用户从系统设置勾完切回来，灯变绿就该自己收起来。
+            # 一直挂着的话，看起来就像「软件卡在引导页没反应」。
+            if not self._auto_closing:
+                self._auto_closing = True
+                NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                    1.5, self, "obAutoClose:", None, False)
         elif ax:
             self.hint.setStringValue_(
                 "辅助功能已开启，切换器可用。想要窗口缩略图的话再开一下屏幕录制。"

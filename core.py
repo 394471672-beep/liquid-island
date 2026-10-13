@@ -33,6 +33,13 @@ _SZ_RE = re.compile(r"w:([-\d.]+)\s*h:([-\d.]+)")
 
 _SCREEN_PERM = None
 _AX_PERM = None
+# 缓存多久重查一次。
+# 为什么不能一次查完就永久记住：用户在系统设置里刚勾上权限、回到本应用时，
+# 进程还拿着「没权限」的旧结论，表现就是「权限给了但软件还是没反应」，
+# 必须退出重开才好 —— 这个坑踩过。TTL 到点自动重查，不用重启。
+_PERM_TTL = 3.0
+_AX_PERM_AT = 0.0
+_SCREEN_PERM_AT = 0.0
 
 
 def has_ax_perm():
@@ -41,13 +48,15 @@ def has_ax_perm():
     **没有权限时 AX 调用会一直等目标应用响应**（实测每次 2 秒超时），
     所以必须跳过，不能硬调。
     """
-    global _AX_PERM
-    if _AX_PERM is None:
+    global _AX_PERM, _AX_PERM_AT
+    now = time.time()
+    if _AX_PERM is None or now - _AX_PERM_AT > _PERM_TTL:
         try:
             import ApplicationServices as AS
             _AX_PERM = bool(AS.AXIsProcessTrusted())
         except Exception:
             _AX_PERM = False
+        _AX_PERM_AT = now
     return _AX_PERM
 
 
@@ -56,12 +65,14 @@ def has_screen_perm():
 
     没权限时 `CGWindowListCreateImage` **不报错，而是静默挂起进程**。
     """
-    global _SCREEN_PERM
-    if _SCREEN_PERM is None:
+    global _SCREEN_PERM, _SCREEN_PERM_AT
+    now = time.time()
+    if _SCREEN_PERM is None or now - _SCREEN_PERM_AT > _PERM_TTL:
         try:
             _SCREEN_PERM = bool(Quartz.CGPreflightScreenCaptureAccess())
         except Exception:
             _SCREEN_PERM = False
+        _SCREEN_PERM_AT = now
     return _SCREEN_PERM
 
 
