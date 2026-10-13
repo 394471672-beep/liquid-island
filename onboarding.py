@@ -82,6 +82,7 @@ class OnboardController(NSObject):
         self.done_btn = None
         self.timer = None
         self.on_finish = None        # 权限状态变了，main 可以据此重试热键
+        self.on_restart = None       # 授权刚办好 → 一键重启（改授权后必须重启 App 才生效）
         self._auto_closing = False   # 两项都开了之后自动收起（只触发一次）
         return self
 
@@ -211,11 +212,19 @@ class OnboardController(NSObject):
         self._set_row(self.rows["screen"], sc)
 
         if ax and sc:
-            self.hint.setStringValue_("两项权限都已开启，可以开始使用了。")
+            self.hint.setStringValue_(
+                "两项权限都已开启。注意：改动授权后必须重启液态岛才生效——"
+                "点右下角「重启并开始使用」。"
+                if self.on_restart is not None else
+                "两项权限都已开启，可以开始使用了。")
+            self.done_btn.setTitle_("重启并开始使用" if self.on_restart is not None
+                                    else "开始使用")
             self.done_btn.setKeyEquivalent_("\r")
             # 用户从系统设置勾完切回来，灯变绿就该自己收起来。
             # 一直挂着的话，看起来就像「软件卡在引导页没反应」。
-            if not self._auto_closing:
+            # 但带了 on_restart 时【不能】自动收：授权改动必须重启 App 才生效，
+            # 自动收了用户就错过重启，表现还是「勾了权限却没反应」。挂着等他点。
+            if not self._auto_closing and self.on_restart is None:
                 self._auto_closing = True
                 NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
                     1.5, self, "obAutoClose:", None, False)
@@ -256,6 +265,11 @@ class OnboardController(NSObject):
 
     def actDone_(self, sender):
         self.finish(mark=True)
+        # 授权刚办好：改动授权后必须重启 App 才生效（当前进程拿不到新授权），
+        # 主动帮一把，省得用户又「点了开始使用却什么都没发生」。
+        if (self.on_restart is not None
+                and core.has_ax_perm() and core.has_screen_perm()):
+            self.on_restart()
 
     def windowWillClose_(self, notification):
         self.finish(mark=True)
@@ -290,13 +304,18 @@ class OnboardController(NSObject):
 _controller = None
 
 
-def open_window(cfg, on_finish=None):
-    """打开（或前置）引导窗口。"""
+def open_window(cfg, on_finish=None, on_restart=None):
+    """打开（或前置）引导窗口。
+
+    on_restart：授权办好后供「重启并开始使用」按钮调用（main 传 AppAgent.restart）。
+    不传（如 prefs 里调用）时按钮就是普通的「开始使用」。
+    """
     global _controller
     if _controller is None:
         _controller = OnboardController.alloc().initWithCfg_(cfg)
     _controller.cfg = cfg
     _controller.on_finish = on_finish
+    _controller.on_restart = on_restart
     _controller.show()
     return _controller
 

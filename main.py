@@ -197,7 +197,8 @@ class AppAgent(NSObject):
                 # 权限按签名记账（ad-hoc 重签后会失效），失效时启动就重新申请。
                 if not (core.has_ax_perm() and core.has_screen_perm()):
                     core.request_permissions()
-                onboarding.open_window(self.cfg, on_finish=self.on_perm_changed)
+                onboarding.open_window(self.cfg, on_finish=self.on_perm_changed,
+                                       on_restart=self.restart)
         except Exception as e:
             print("[main] 引导窗口失败:", e, flush=True)
 
@@ -271,6 +272,11 @@ class AppAgent(NSObject):
         it4.setTarget_(self)
         menu.addItem_(it4)
 
+        it4b = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "重启液态岛…", "actRestart_", "")
+        it4b.setTarget_(self)
+        menu.addItem_(it4b)
+
         it5 = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "退出", "actQuit_", "q")
         it5.setTarget_(self)
@@ -288,19 +294,22 @@ class AppAgent(NSObject):
         it6.setTarget_(self)
         menu.addItem_(it6)
 
-        # 左键 / 右键 统一走按钮 action 弹同一个菜单（action-only 模式）。
-        # ⚠️ 这里【不要】用 setMenu_(menu)：一旦菜单被 setMenu_ 挂到状态项上，
-        # 再调 popUpStatusItemMenu_ 在部分 macOS 上会静默失效（右键点了没反应），
-        # 正是之前反复出现的 bug。统一用 action 弹，最稳。
-        # actStatusClick_ 必须是普通 def（见其注释）——@objc.python_method 会让
-        # selector 不注册到 ObjC 运行时，导致按钮 action 找不到方法 → 右键毫无反应。
+        # 双保险：左键走 AppKit 原生菜单（setMenu_，100% 可靠，不依赖任何
+        # 自定义代码）；右键单独给按钮挂 action 弹同一个菜单（NSStatusItem
+        # 的菜单默认只响应左键，右键要自己接）。
+        # ⚠️ actStatusClick_ 必须是普通 def——@objc.python_method 会让 selector
+        # 不注册到 ObjC 运行时，右键 action 找不到方法 → 静默失效，
+        # 正是用户反复报的「右键/图标点击没反应」的根因。
+        self.status_item.setMenu_(menu)
         self._status_menu = menu
         try:
             btn.setTarget_(self)
             btn.setAction_("actStatusClick_")
-            btn.sendActionOn_(NSLeftMouseDownMask | NSRightMouseDownMask)
+            # 只接管右键：左键仍由 setMenu_ 原生处理，避免同一个菜单被弹两次。
+            btn.sendActionOn_(NSRightMouseDownMask)
         except Exception as e:
-            print("[main] 状态项点击适配失败:", e, flush=True)
+            # 失败也无妨：左键仍由 setMenu_ 兜底，菜单照样能开。
+            print("[main] 右键菜单适配失败（左键仍可用）:", e, flush=True)
 
     def actStatusClick_(self, sender):
         """右键点击菜单栏图标 → 弹出与左键同一个菜单。
@@ -361,7 +370,8 @@ class AppAgent(NSObject):
     def actOnboard_(self, sender):
         try:
             import onboarding
-            onboarding.open_window(self.cfg, on_finish=self.on_perm_changed)
+            onboarding.open_window(self.cfg, on_finish=self.on_perm_changed,
+                                   on_restart=self.restart)
         except Exception as e:
             print("[main] 打开引导失败:", e, flush=True)
 
@@ -431,21 +441,44 @@ class AppAgent(NSObject):
 
     @objc.python_method
     def restart(self):
-        """重启自己。
+        """重启自己（授权变更、配置大改后用）。
 
-        ⚠️ 单实例保护是 pgrep 查「还有没有别的 main.py 在跑」，而旧进程要等
-        terminate 真正落地才消失。直接 Popen 新进程会被**自己的保护**拦掉，
-        表现就是用户看到「点了重启，毫无反应」。
-        所以交给一个脱离本进程的 shell：先睡 1.2 秒等旧的退干净，再拉新的。
+        ⚠️ 单实例锁是 flock：直接 Popen 新进程会被锁挡住（或挡住别人），
+        表现就是「点了重启，毫无反应」。用 `--takeover` 模式拉起新进程：
+        它负责 SIGTERM 旧实例、等 flock 释放后接管启动，打包版/源码版都适用。
+        旧实现是 `sleep 1.2; python main.py`——打包后那跑的是源码副本，
+        双实例 + 权限身份还不一样，已废。
         """
-        import shlex
-        cmd = ("sleep 1.2; cd %s; %s main.py"
-               % (shlex.quote(BASE), shlex.quote(sys.executable)))
         try:
-            subprocess.Popen(["/bin/sh", "-c", cmd], start_new_session=True)
+            if "液态岛.app/Contents/MacOS" in sys.executable:
+                cmd = [sys.executable, "--takeover"]
+            else:
+                cmd = [sys.executable,
+                       os.path.abspath(os.path.join(BASE, "main.py")), "--takeover"]
+            subprocess.Popen(cmd, start_new_session=True)
+            print("[main] 已拉起接管进程，准备退出自己", flush=True)
         except Exception as e:
             print("[main] 重启失败:", e, flush=True)
-        NSApplication.sharedApplication().terminate_(None)
+            return
+        try:
+            NSApplication.sharedApplication().terminate_(None)
+        except Exception:
+            pass
+        # 兜底硬退：terminate 不落地的话 1.5 秒后自己了断，
+        # 保证「点了重启一定重启得掉」（新进程靠 takeover 等锁，不怕我们退得慢）。
+        import threading
+
+        def _hard_exit():
+            import time as _t
+            _t.sleep(1.5)
+            os._exit(0)
+
+        threading.Thread(target=_hard_exit, daemon=True).start()
+
+    def actRestart_(self, sender):
+        """菜单栏「重启液态岛…」。普通 def——会被 ObjC 当 selector 调，
+        绝不能加 @objc.python_method（否则 selector 消失、静默失效）。"""
+        self.restart()
 
     # ── 热键回调（在主线程，必须立刻返回） ─────────────────
     @objc.python_method
@@ -559,6 +592,18 @@ class AppAgent(NSObject):
                 except Exception:
                     pass
 
+            # 每 ≈5 秒：热键监听自愈。CGEventTapCreate 在登录早期
+            # （LaunchAgent 拉起的进程尤其常见）或权限刚就绪时会失败，
+            # 原来只有引导完成时重试一次——用户看到的就是
+            # 「重启后热键时好时坏，还没地方修」。这里持续兜底重试。
+            if (self.sw_on and self.mon is not None
+                    and not self.mon.running and self._slow_tick % 100 == 0):
+                try:
+                    if self.mon.start():
+                        print("[main] 热键监听重试成功", flush=True)
+                except Exception:
+                    pass
+
             # 每 ≈10 秒：把真实运行状态写到文件，方便排查「实时显示」问题
             # （权限到底生效没、窗口枚举到底看不看得见）。不走通知，避免
             # 分布式通知 selector 暴露问题导致崩溃。
@@ -663,16 +708,44 @@ def _notify_existing():
         print("[main] 通知已有实例失败:", e, flush=True)
 
 
+def _takeover_and_restart():
+    """`--takeover` 启动模式：新进程接管旧实例，实现「一键重启」。
+
+    单实例锁是 flock——旧进程不退出，新进程永远拿不到锁。所以顺序是：
+    读锁文件里的旧 PID → SIGTERM 请旧实例退出 → 轮询等 flock 释放（内核在
+    旧进程真正退出时自动释放，不会留幽灵锁）→ 拿到锁后返回，走正常启动流程。
+    """
+    deadline = time.time() + 10
+    try:
+        pid = int(open(LOCK_PATH).read().strip())
+        os.kill(pid, signal.SIGTERM)
+        print(f"[main] takeover：已请旧实例 {pid} 退出", flush=True)
+    except Exception:
+        pass  # 锁文件没有/进程已死，都无所谓，直接等锁
+    while time.time() < deadline:
+        if _acquire_lock():
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def main():
-    others = _other_instances()
-    if others:
-        print("[main] 已有实例在跑，本次启动放弃：", others, flush=True)
-        _notify_existing()
-        return
-    if not _acquire_lock():
-        print("[main] 单实例锁被占用，本次启动放弃", flush=True)
-        _notify_existing()
-        return
+    if "--takeover" in sys.argv:
+        # 接管模式：跳过「已有实例」检查（那个检查会把还没死透的旧实例
+        # 误判成别人，导致重启失败），拿锁成功即继续正常启动。
+        if not _takeover_and_restart():
+            print("[main] takeover 超时（旧实例不退？），放弃重启", flush=True)
+            return
+    else:
+        others = _other_instances()
+        if others:
+            print("[main] 已有实例在跑，本次启动放弃：", others, flush=True)
+            _notify_existing()
+            return
+        if not _acquire_lock():
+            print("[main] 单实例锁被占用，本次启动放弃", flush=True)
+            _notify_existing()
+            return
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
     try:
