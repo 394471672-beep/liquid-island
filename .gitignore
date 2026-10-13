@@ -7,6 +7,9 @@ __pycache__/
 .build-venv/
 build/
 dist/
+# 改名留存的历史构建目录（build.old-* / dist.old-* / .dmg-stage-old）
+build.old*/
+dist.old*/
 
 # 运行时产物
 STOP
