@@ -73,6 +73,25 @@ python main.py
 
 快捷键、位置、主题、图标大小……都能在**设置面板**里改。
 
+### 设置面板：Material Design 3
+
+界面按 **Material Design 3** 规范实现，跟随系统深浅色自动切换两套 M3 色角色：
+
+- **配色**：M3 color roles（primary / secondary-container / surface-container / outline…），
+  种子色取品牌青蓝。浅色与深色两套，由 `prefers-color-scheme` 自动选择
+- **形状**：按钮与导航项全圆角（pill）、卡片 12dp、输入框 8dp、菜单 12dp
+- **组件**：8 种 M3 按钮层级（filled / tonal / text）、52×32 M3 开关、
+  双色轨道滑块（已填充段 primary）、outlined 下拉框
+- **图标**：18 个 **Material Symbols** 官方图标，已内嵌进 HTML —— 不依赖 CDN，离线可用
+- **动效**：M3 emphasized easing `cubic-bezier(.2,0,0,1)`
+
+![设置面板 · 浅色](docs/prefs-m3-light.png)
+
+![设置面板 · 深色](docs/prefs-m3-dark.png)
+
+> 图标由 `tools/fetch_m3_icons.py` 从官方 `@material-symbols/svg-400` 抓取并生成
+> 内联 sprite；想换图标改脚本里的 `ICONS` 表重跑即可。
+
 ### 设置项速览
 
 - **灵动岛**：位置（顶部居中 / 左 / 右 / 屏幕左缘 / 右缘）、显示在哪个屏（主屏 / 鼠标所在屏 / 所有屏）、收起时的样子（iOS 横杠 / 胶囊 / 圆点 / 完全隐形）、怎么展开（滑过 / 点击 / 快捷键）、主题（玻璃拟态 / 纯黑 / 浅色 / 跟随系统）、强调色、整体缩放
@@ -145,12 +164,13 @@ switcher.py    窗口切换器浮层（AltTab 式交互）
 core.py        公共能力：权限、窗口枚举、缩略图、图标
 hotkey.py      全局热键（CGEventTap）
 config.py      配置读写（JSON，缺键自动补默认）
-prefs.py       +  prefs.html    设置面板（WKWebView + 玻璃拟态 CSS）
+prefs.py       +  prefs.html    设置面板（WKWebView + Material Design 3 CSS）
 onboarding.py  首次运行授权引导
 panels.py      「关于」与「诊断与自检」
 version.py     版本号（改这里）
 resources.py   资源定位（打包后 __file__ 会失效，靠它兜底）
-tools/make_icon.py   图标生成脚本（改配色比例后重跑即可）
+tools/make_icon.py     App 图标生成脚本（改配色比例后重跑即可）
+tools/fetch_m3_icons.py  Material Symbols 图标抓取 → assets/m3_icons.html
 build.sh       一键打包
 setup.py       py2app 配置
 ```
