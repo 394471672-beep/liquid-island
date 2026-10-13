@@ -7,5 +7,5 @@ APP_VERSION = "1.0.0"
 APP_BUILD = "1"
 COPYRIGHT = "Copyright © 2026 液态岛 contributors"
 
-# 仓库地址（关于窗口里点「打开仓库」用；换成你自己的仓库后改这里）
-REPO_URL = "https://github.com/your-name/liquid-island"
+# 仓库地址（关于窗口里点「打开仓库」用）
+REPO_URL = "https://github.com/394471672-beep/liquid-island"

@@ -9,9 +9,9 @@
 
 一个进程、一套配置，不用同时装两个工具。
 
-![灵动岛](docs/效果图-灵动岛.png)
+![灵动岛](docs/preview-island.png)
 
-![窗口切换器](docs/效果图-切换器.png)
+![窗口切换器](docs/preview-switcher.png)
 
 ---
 
@@ -19,7 +19,7 @@
 
 ### 方式一：直接下载（推荐给朋友）
 
-1. 从 Releases 下载 `液态岛-x.x.x.dmg`
+1. 从 [**Releases**](https://github.com/394471672-beep/liquid-island/releases/latest) 下载 `液态岛-x.x.x.dmg`
 2. 打开 dmg，把 **液态岛** 拖进 **Applications**
 3. **第一次打开要右键 → 打开**（详见下方「为什么第一次要右键」）
 4. 跟着引导页给两项权限，完事
@@ -27,7 +27,7 @@
 ### 方式二：从源码构建
 
 ```bash
-git clone <你的仓库地址> liquid-island
+git clone https://github.com/394471672-beep/liquid-island.git
 cd liquid-island
 ./build.sh          # 自动建 venv、装依赖、打包、签名、出 dmg
 ```
