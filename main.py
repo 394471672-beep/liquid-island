@@ -282,24 +282,29 @@ class AppAgent(NSObject):
         it6.setTarget_(self)
         menu.addItem_(it6)
 
-        self.status_item.setMenu_(menu)        # 左键默认就弹出（最稳，AppKit 原生行为）
+        # 左键 / 右键 统一走按钮 action 弹同一个菜单（action-only 模式）。
+        # ⚠️ 这里【不要】用 setMenu_(menu)：一旦菜单被 setMenu_ 挂到状态项上，
+        # 再调 popUpStatusItemMenu_ 在部分 macOS 上会静默失效（右键点了没反应），
+        # 正是之前反复出现的 bug。统一用 action 弹，最稳。
+        # actStatusClick_ 必须是普通 def（见其注释）——@objc.python_method 会让
+        # selector 不注册到 ObjC 运行时，导致按钮 action 找不到方法 → 右键毫无反应。
         self._status_menu = menu
-        # 右键：status item 菜单默认只响应【左键】，右键要自己接。
-        # 做法：菜单继续 setMenu_（左键原生弹出），只给按钮挂一个「右键」action
-        # 去弹同一个菜单。两种点击都弹菜单，且绝不依赖 popUpStatusItemMenu_
-        # 在 setMenu_(None) 下的那些不确定行为——之前那版在某些 macOS 上右键
-        # 会静默失效（点了毫无反应），正是用户报的 bug。
         try:
             btn.setTarget_(self)
             btn.setAction_("actStatusClick_")
-            btn.sendActionOn_(NSRightMouseDownMask)
+            btn.sendActionOn_(NSLeftMouseDownMask | NSRightMouseDownMask)
         except Exception as e:
-            # 失败也无妨：左键仍由 setMenu_ 兜底，菜单照样能开。
-            print("[main] 右键菜单适配失败（左键仍可用）:", e, flush=True)
+            print("[main] 状态项点击适配失败:", e, flush=True)
 
-    @objc.python_method
     def actStatusClick_(self, sender):
-        """左键/右键点击菜单栏图标 → 弹出同一个菜单。"""
+        """右键点击菜单栏图标 → 弹出与左键同一个菜单。
+
+        ⚠️ 这个方法【绝不能】加 @objc.python_method：那会让 selector 不注册到
+        ObjC 运行时（respondsToSelector_ 返回 False），按钮的 action 找不到方法
+        → 右键点了毫无反应（正是用户反复报的 bug）。必须是普通 def，PyObjC 才会
+        把它暴露成 actStatusClick:。已用实验验证：@objc.python_method 装饰后
+        respondsToSelector_("actStatusClick:") == False。
+        """
         try:
             self.status_item.popUpStatusItemMenu_(self._status_menu)
         except Exception as e:
