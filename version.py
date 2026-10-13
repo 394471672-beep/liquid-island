@@ -3,8 +3,8 @@
 
 APP_NAME = "液态岛"
 APP_NAME_EN = "Liquid Island"
-APP_VERSION = "1.2.5"
-APP_BUILD = "8"
+APP_VERSION = "1.2.6"
+APP_BUILD = "9"
 COPYRIGHT = "Copyright © 2026 液态岛 contributors"
 
 # 仓库地址（关于窗口里点「打开仓库」用）

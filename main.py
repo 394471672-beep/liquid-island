@@ -165,6 +165,10 @@ class AppAgent(NSObject):
         if self.cfg["general"].get("show_menubar_icon", True):
             self.build_menubar()
 
+        # 4.5) 启动后让岛展开 3 秒：默认收起态只有 11px 透明条，
+        # 用户打开后完全不知道有东西、以为「没反应」。给个直观反馈。
+        self._intro_island()
+
         self._cfg_stamp = self.cfg_stamp()
 
         # 5) 主循环里的杂活：收切换器缩略图、看 STOP 文件
@@ -278,20 +282,20 @@ class AppAgent(NSObject):
         it6.setTarget_(self)
         menu.addItem_(it6)
 
-        self.status_item.setMenu_(menu)
-        # ⚠️ 默认 status item 菜单只在【左键】弹出；鼠标用户右键没有任何反应。
-        # 这里同时让右键也弹出同一个菜单：把按钮的 action 接到「弹出菜单」，
-        # 并让左/右按下都触发该 action（sendActionOn_ 同时挂两个掩码）。
+        self.status_item.setMenu_(menu)        # 左键默认就弹出（最稳，AppKit 原生行为）
         self._status_menu = menu
+        # 右键：status item 菜单默认只响应【左键】，右键要自己接。
+        # 做法：菜单继续 setMenu_（左键原生弹出），只给按钮挂一个「右键」action
+        # 去弹同一个菜单。两种点击都弹菜单，且绝不依赖 popUpStatusItemMenu_
+        # 在 setMenu_(None) 下的那些不确定行为——之前那版在某些 macOS 上右键
+        # 会静默失效（点了毫无反应），正是用户报的 bug。
         try:
-            btn.setAction_("actStatusClick_")
             btn.setTarget_(self)
-            btn.sendActionOn_(NSLeftMouseDownMask | NSRightMouseDownMask)
-            # 去掉 setMenu_ 的默认左键行为，避免两次弹出；统一走 action。
-            self.status_item.setMenu_(None)
+            btn.setAction_("actStatusClick_")
+            btn.sendActionOn_(NSRightMouseDownMask)
         except Exception as e:
-            print("[main] 右键菜单适配失败，回退左键:", e, flush=True)
-            self.status_item.setMenu_(menu)
+            # 失败也无妨：左键仍由 setMenu_ 兜底，菜单照样能开。
+            print("[main] 右键菜单适配失败（左键仍可用）:", e, flush=True)
 
     @objc.python_method
     def actStatusClick_(self, sender):
@@ -300,6 +304,28 @@ class AppAgent(NSObject):
             self.status_item.popUpStatusItemMenu_(self._status_menu)
         except Exception as e:
             print("[main] 弹出菜单失败:", e, flush=True)
+
+    @objc.python_method
+    def _intro_island(self):
+        """启动后让灵动岛展开约 3 秒，给用户一个「它在工作」的直观反馈。
+
+        默认收起态只有 11px 的透明小条，不看文档根本不知道有东西存在，
+        用户打开后觉得「毫无反应」。展开一下，至少证明进程活着、岛能用。
+        展开期间靠 island.Controller.intro_until 挡住自动收起。
+        """
+        import time as _t
+        if not self.island_on or self.island_ctrl is None:
+            return
+        ctrls = getattr(self.island_ctrl, "ctrls", None)
+        if not ctrls:
+            return
+        for c in ctrls:
+            try:
+                c.intro_until = _t.time() + 3.0
+                c.expanded = True
+                c.apply_geometry()
+            except Exception:
+                pass
 
     # ── 菜单动作 ──────────────────────────────────────────
     def actPrefs_(self, sender):
@@ -535,8 +561,11 @@ class AppAgent(NSObject):
                         "running_apps": len(core.running_apps()),
                         "windows_all": len(core.list_windows(scope="all-windows")),
                         "switcher_items": len(getattr(self.sw, "items", []) or []),
-                        "island_apps_n": (getattr(self.island_ctrl, "n", None)
-                                          if self.island_ctrl else None),
+                        "island_apps_n": (
+                            getattr(self.island_ctrl.ctrls[0], "n", None)
+                            if (self.island_ctrl is not None
+                                and getattr(self.island_ctrl, "ctrls", None))
+                            else None),
                         "hotkey_running": bool(self.mon.running),
                     }
                     with open(os.path.expanduser(

@@ -1689,6 +1689,9 @@ class Controller(NSObject):
     def maybe_collapse(self):
         if not self.expanded:
             return
+        # 启动引导展开期间（main._intro_island 设的）不要自动收起。
+        if getattr(self, "intro_until", 0) and time.time() < self.intro_until:
+            return
         now = time.time()
         if self.leave_at is None:
             self.leave_at = now
