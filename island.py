@@ -52,48 +52,22 @@ STOP_FILE = os.path.join(BASE, "STOP")
 
 # ── 配置 ──────────────────────────────────────────────────
 # 所有可调项都在 ~/.config/liquid-island/config.json（设置面板改的就是它）。
-# 改完配置要重启本程序才生效。
+#
+# ⚠️ 下面这些「模块级常量」全部由 reload_config() 统一算出，模块加载时先跑一次。
+# 以前它们是写死的：改完设置必须重启进程才生效（老大明确要求改掉）。
+# 现在主进程发现配置文件变了就调 reload_config()，位置/尺寸/主题立刻生效。
 CFG = cfgmod.load()
 _ISL = CFG["island"]
-_ICO = _ISL["icons"]
+_ICO = _ISL.get("icons", {})
 _WINCFG = CFG["windows"]
 
-# ── 尺寸 ──────────────────────────────────────────────────
-SCALE = float(_ISL.get("scale", 1.8))
+SCALE = 1.8
 
 
 def S(v):
     """尺寸缩放（统一取整，避免半像素发虚）。"""
     return int(round(v * SCALE))
 
-
-ICON = S(_ICO.get("size", 38))       # 图标显示边长（点）
-GAP = S(_ICO.get("gap", 10))         # 图标间距
-PAD = S(_ICO.get("pad", 16))         # 胶囊左右内边距
-CAP_H = S(58)           # 展开态胶囊高度
-CLOSE_W = S(28)         # 右侧关闭按钮区宽
-ICON_BOTTOM = S(13)     # 图标距胶囊底边（给下方小圆点留位置）
-DOT_SIZE = S(5)         # 当前应用指示圆点直径
-
-HIDDEN_W = S(132)       # 收起态横杠宽（参考 iOS 下拉横杠）
-HIDDEN_H = max(8, S(6))         # 收起态横杠高
-
-POPUP_NAME_H = S(32)    # 名字条弹出区高度
-POPUP_THUMB_H = S(178)  # 缩略图卡片弹出区高度
-THUMB_W = S(232)        # 缩略图卡片宽
-THUMB_MAX_H = S(142)    # 缩略图最大高度
-
-# 窗口列表（按窗口切换）
-MAX_WINS = int(_WINCFG.get("max_cards", 4))   # 最多显示几张窗口卡片
-WIN_CARD_W = S(196)     # 单个窗口卡片宽
-WIN_CARD_IMG_H = S(116) # 卡片里缩略图区高
-WIN_CARD_H = S(142)     # 卡片总高（图 + 标题）
-WIN_GAP = S(8)          # 卡片间距
-WIN_POPUP_H = WIN_CARD_H + S(14)
-
-TOP_GAP = S(5)          # 距菜单栏下沿的间隙
-TRIGGER_W = S(460)      # 顶部中央触发热区宽度（比小条宽，好碰到）
-TRIGGER_H = S(16)       # 触发热区高度（贴屏幕顶部）
 
 # ── 主题 ──────────────────────────────────────────────────
 # glass 玻璃拟态（半透，透出桌面）| dark iOS 原味（近纯黑）
@@ -109,19 +83,112 @@ def _detect_auto_theme():
         return "glass"
 
 
-THEME = str(_ISL.get("theme", "glass"))
-if THEME == "auto":
-    THEME = _detect_auto_theme()
-
 #            底色浓度, 玻璃边缘亮度, 文字用白(1)/黑(0)
 _THEME_SPEC = {
     "glass": (0.42, 0.30, 1),
     "dark": (0.92, 0.14, 1),
     "light": (0.34, 0.55, 0),
 }
-MASK_ALPHA, GLASS_EDGE, _TEXT_WHITE = _THEME_SPEC.get(THEME, _THEME_SPEC["glass"])
 GLASS_SHADOW = 0.34   # 玻璃柔和外阴影不透明度
-ACCENT_HEX = str(_ISL.get("accent", "#4DC1FF"))
+
+
+def reload_config(cfg=None):
+    """按配置重算全部几何 / 主题常量（配置热更新的核心）。
+
+    cfg 不传就重新读盘。返回新的 CFG —— 调用方通常也要同步自己的引用
+    （main.py 的 self.cfg、switcher 的 self.cfg）。
+
+    ⚠️ 凡是要跟着配置变的量都必须写在这个函数里。漏掉一个，
+    那个选项就还是「改了没反应」，而且很难查。
+    """
+    global CFG, _ISL, _ICO, _WINCFG
+    global SCALE
+    global ICON, GAP, PAD, CAP_H, CLOSE_W, ICON_BOTTOM, DOT_SIZE
+    global HIDDEN_W, HIDDEN_H
+    global POPUP_NAME_H, POPUP_THUMB_H, THUMB_W, THUMB_MAX_H
+    global MAX_WINS, WIN_CARD_W, WIN_CARD_IMG_H, WIN_CARD_H, WIN_GAP, WIN_POPUP_H
+    global TOP_GAP, TRIGGER_W, TRIGGER_H
+    global THEME, MASK_ALPHA, GLASS_EDGE, _TEXT_WHITE, ACCENT_HEX
+    global MAG_MAX, MAG_LINK, MAG_DIST
+    global HOVER_DWELL, COLLAPSE_DELAY, THUMB_TTL
+    global ICON_PX, THUMB_PX_W
+    global SHOW_NAMES, SHOW_ACTIVE_DOT, EXPAND_ON
+
+    CFG = cfg if cfg is not None else cfgmod.load()
+    _ISL = CFG["island"]
+    _ICO = _ISL.get("icons", {})
+    _WINCFG = CFG.get("windows", {})
+
+    # ── 尺寸 ──────────────────────────────────────────────
+    SCALE = float(_ISL.get("scale", 1.8))
+
+    ICON = S(_ICO.get("size", 38))       # 图标显示边长（点）
+    GAP = S(_ICO.get("gap", 10))         # 图标间距
+    PAD = S(_ICO.get("pad", 16))         # 胶囊左右内边距
+    CAP_H = S(58)           # 展开态胶囊高度
+    CLOSE_W = S(28)         # 右侧关闭按钮区宽
+    ICON_BOTTOM = S(13)     # 图标距胶囊底边（给下方小圆点留位置）
+    DOT_SIZE = S(5)         # 当前应用指示圆点直径
+
+    # 收起态「形态」：设置面板里能选，靠改这两个尺寸实现。
+    # 圆角是 HIDDEN_H/2（panel_place 里定的），所以 dot 自然成了正圆。
+    _form = str(_ISL.get("form", "bar"))
+    if _form == "pill":            # 小胶囊
+        HIDDEN_W, HIDDEN_H = S(64), S(22)
+    elif _form == "dot":           # 小圆点
+        HIDDEN_W, HIDDEN_H = S(16), S(16)
+    elif _form == "invisible":     # 完全隐形（只剩一个几乎看不见的点）
+        HIDDEN_W, HIDDEN_H = S(6), S(6)
+    else:                          # bar —— iOS 下拉横杠（默认）
+        HIDDEN_W, HIDDEN_H = S(132), max(8, S(6))
+
+    POPUP_NAME_H = S(32)    # 名字条弹出区高度
+    POPUP_THUMB_H = S(178)  # 缩略图卡片弹出区高度
+    THUMB_W = S(232)        # 缩略图卡片宽
+    THUMB_MAX_H = S(142)    # 缩略图最大高度
+
+    # 窗口列表（按窗口切换）
+    MAX_WINS = int(_WINCFG.get("max_cards", 4))   # 最多显示几张窗口卡片
+    WIN_CARD_W = S(196)     # 单个窗口卡片宽
+    WIN_CARD_IMG_H = S(116) # 卡片里缩略图区高
+    WIN_CARD_H = S(142)     # 卡片总高（图 + 标题）
+    WIN_GAP = S(8)          # 卡片间距
+    WIN_POPUP_H = WIN_CARD_H + S(14)
+
+    TOP_GAP = S(5)          # 距菜单栏下沿的间隙
+    TRIGGER_W = S(_ISL.get("hotzone", {}).get("width", 460))   # 触发热区宽
+    TRIGGER_H = S(_ISL.get("hotzone", {}).get("height", 16))   # 触发热区高
+
+    # ── 主题 ──────────────────────────────────────────────
+    THEME = str(_ISL.get("theme", "glass"))
+    if THEME == "auto":
+        THEME = _detect_auto_theme()
+    MASK_ALPHA, GLASS_EDGE, _TEXT_WHITE = _THEME_SPEC.get(
+        THEME, _THEME_SPEC["glass"])
+    ACCENT_HEX = str(_ISL.get("accent", "#4DC1FF"))
+
+    # ── 动效 ──────────────────────────────────────────────
+    MAG_MAX = float(_ICO.get("magnify", 1.45))     # 悬停图标放大倍数
+    MAG_LINK = 1.0 + (MAG_MAX - 1.0) * 0.36        # 邻近图标联动（跟着主倍率走）
+    MAG_DIST = S(_ICO.get("magnify_dist", 72))     # 放大影响半径（点）
+
+    HOVER_DWELL = float(_WINCFG.get("dwell", 0.13))   # 停稳多久才加载窗口卡片
+    COLLAPSE_DELAY = float(_ISL.get("auto_collapse", 0.55))
+    THUMB_TTL = float(_WINCFG.get("cache_ttl", 30.0))
+
+    # 交互开关（设置面板里有对应开关，以前没接上：选了没反应）
+    SHOW_NAMES = bool(_ISL.get("show_names", True))        # 悬停先出名字条
+    SHOW_ACTIVE_DOT = bool(_ISL.get("show_active_dot", True))  # 当前应用指示圆点
+    EXPAND_ON = str(_ISL.get("expand_on", "hover"))        # hover / click / hotkey
+
+    ICON_PX = int(ICON * MAG_MAX * 2)   # 图标位图渲染分辨率（放大后仍清晰）
+    THUMB_PX_W = THUMB_W * 2            # 缩略图渲染分辨率（Retina）
+
+    return CFG
+
+
+# 模块加载时先算一次（SCALE 之上的默认值只是占位，这里才填真值）
+reload_config()
 
 
 def accent_rgba(alpha=1.0):
@@ -145,24 +212,17 @@ def card_bg_rgba():
     return (1.0, 1.0, 1.0, 0.62)
 
 # ── 动效 ──────────────────────────────────────────────────
-MAG_MAX = float(_ICO.get("magnify", 1.45))     # 悬停图标放大倍数
-MAG_LINK = 1.0 + (MAG_MAX - 1.0) * 0.36        # 邻近图标联动（跟着主倍率走）
-MAG_DIST = S(_ICO.get("magnify_dist", 72))     # 放大影响半径（点）
-
+# 下面这些是固定手感参数，不随配置变；跟着配置变的在 reload_config() 里。
 EXPAND_DUR = 0.26    # 展开/收起动画时长
 POP_DUR = 0.24       # 弹窗出现动画时长
 POP_DRAG_DUR = 0.38  # 卡片「拖拽展开」时长（弹簧，稍长才有回弹感）
 POP_DRAG_SX = 0.24   # 拖拽起始横向缩放（先窄）
 POP_DRAG_SY = 0.05   # 拖拽起始纵向缩放（先扁成一条线）
-HOVER_DWELL = float(_WINCFG.get("dwell", 0.13))   # 停稳多久才加载窗口卡片
 POP_SCALE = 0.82     # 弹窗起始缩放（从多小弹出来）
 NAME_FADE = 0.13
 APP_FADE = 0.22
-COLLAPSE_DELAY = float(_ISL.get("auto_collapse", 0.55))
-THUMB_TTL = float(_WINCFG.get("cache_ttl", 30.0))
-
-ICON_PX = int(ICON * MAG_MAX * 2)   # 图标位图渲染分辨率（放大后仍清晰）
-THUMB_PX_W = THUMB_W * 2            # 缩略图渲染分辨率（Retina）
+# HOVER_DWELL / COLLAPSE_DELAY / THUMB_TTL / ICON_PX / THUMB_PX_W
+# 都在 reload_config() 里（依赖 ICON / THUMB_W 等会变的量）。
 
 SKIP_BUNDLES = {
     "com.apple.dock", "com.apple.controlcenter", "com.apple.notificationcenterui",
@@ -416,11 +476,17 @@ def _cg_windows(pid):
     return out
 
 
-def app_windows(app, max_n=MAX_WINS, screen_w=None):
+def app_windows(app, max_n=None, screen_w=None):
     """该应用的真实窗口列表，按面积从大到小。
 
     每项：{"ax": AX元素, "title", "pos", "size", "cgid", "min"}
+
+    ⚠️ max_n 默认 None 而不是 MAX_WINS：Python 的默认参数在**函数定义时**
+    就求值绑定，写成 max_n=MAX_WINS 会把当时的值焊死，配置热更新改了
+    max_cards 也不会生效（而且极难查）。
     """
+    if max_n is None:
+        max_n = MAX_WINS
     try:
         pid = app.processIdentifier()
         elem = AXUIElementCreateApplication(pid)
@@ -806,7 +872,17 @@ def ov_set_apps(ov, apps):
 
 
 def ov_update_dots(ov):
-    """图标下方小圆点：当前前台应用画青色，其余暗白。"""
+    """图标下方小圆点：当前前台应用画青色，其余暗白。
+
+    开关 island.show_active_dot 关掉后整组圆点隐藏（不是变透明色——
+    留着透明图层仍会参与布局，图标位置会怪）。
+    """
+    if not SHOW_ACTIVE_DOT:
+        no_anim()
+        for dot in ov.dot_layers:
+            dot.setHidden_(True)
+        commit()
+        return
     try:
         front_pid = NSWorkspace.sharedWorkspace().frontmostApplication().processIdentifier()
     except Exception:
@@ -817,6 +893,7 @@ def ov_update_dots(ov):
             is_front = ov.apps[i].processIdentifier() == front_pid
         except Exception:
             is_front = False
+        dot.setHidden_(False)      # 从「关」切回「开」时要能恢复
         if is_front:
             dot.setBackgroundColor_(
                 NSColor.colorWithCalibratedRed_green_blue_alpha_(
@@ -1203,6 +1280,9 @@ class IslandOverlay(NSView):
         return True
 
     def mouseDown_(self, event):
+        # 供 expand_on=click 消费：由 Controller 在 pollMouse 里取走。
+        # 放在最前面，这样收起态（面板很小、图标还没排布）点一下也能记到。
+        self.clicked = True
         p = self.convertPoint_fromView_(event.locationInWindow(), None)
         # 窗口卡片：点哪张切到哪个窗口
         wi = ov_win_hit(self, p)
@@ -1265,6 +1345,7 @@ class Controller(NSObject):
         self.last_layout_t = 0.0   # 上次卡片布局时间（节流用）
         self.last_mouse = None     # 上次鼠标位置（没动就跳过重算）
         self.suspended = False     # 切换器打开时临时挂起
+        self.click_open = False    # expand_on=click 时的展开状态
         self.pend_i = -1           # 待加载的图标（等悬停停稳）
         self.pend_t = 0.0
         self.thumb_busy = False
@@ -1314,7 +1395,23 @@ class Controller(NSObject):
                 self.pend_i = -1
                 self.attach_windows(pi)
 
-            if in_trigger or in_panel:
+            # 弹出方式（设置面板可配）：
+            #   hover   —— 鼠标滑过热区就展开（默认）
+            #   click   —— 点一下才展开，避免路过就弹
+            #   hotkey  —— 鼠标完全不展开，岛只当装饰，切换全靠 Option+Tab
+            if EXPAND_ON == "click":
+                if getattr(self.overlay, "clicked", False):
+                    self.overlay.clicked = False
+                    self.click_open = not self.expanded      # 再点一下收起
+                if not in_panel and not in_trigger:
+                    self.click_open = False                  # 鼠标移开就复位
+                want_open = self.click_open
+            elif EXPAND_ON == "hotkey":
+                want_open = False
+            else:
+                want_open = in_trigger or in_panel
+
+            if want_open:
                 self.expand()
                 if in_panel and moved:
                     self.handle_hover(p)
@@ -1398,8 +1495,12 @@ class Controller(NSObject):
             # 若已有卡片还每次重置成 name，会形成「name ↔ thumb」来回切换，
             # 导致每帧重排（实测日志里同一图标刷 30+ 次「展示卡片」）。
             if self.popup != "thumb":
-                self.set_popup("name")
-                ov_place_name(self.overlay, i)
+                if SHOW_NAMES:
+                    self.set_popup("name")
+                    ov_place_name(self.overlay, i)
+                else:
+                    # 关掉了名字条：直接等窗口卡片，别用空名字条占位
+                    self.set_popup(None)
             # 先排队，等鼠标停稳（见 pollMouse）再拉窗口数据
             self.pend_i = i
             self.pend_t = time.time()
@@ -1782,6 +1883,28 @@ class IslandGroup(object):
                 self.rebuild()
         except Exception as e:
             print("[island] 同步屏幕失败:", e, flush=True)
+
+    def apply_config(self, cfg=None):
+        """配置热更新：重算常量，然后让每个实例按新参数原地重排。
+
+        位置 / 尺寸 / 主题 / 图标大小都能原地改 —— 刻意**不**销毁重建窗口：
+        重建会闪一下，还会丢掉当前展开状态、悬停位置和窗口缩略图缓存。
+        monitor（显示在哪个屏）变了交给 sync_screens() 增删实例。
+
+        返回新的 CFG，调用方（main.py）拿它同步自己的引用。
+        """
+        cfg = reload_config(cfg)
+        self.monitor = cfg["island"].get("monitor", "main")
+        for c in self.ctrls:
+            try:
+                c.apply_geometry()
+                # 主题 / 图标尺寸变了，已画好的图层得按新值重画：
+                # 置空 last_sig 逼 refresh_ 走「应用列表变了」那条路。
+                c.last_sig = None
+                c.refresh_(None)
+            except Exception as e:
+                print("[island] 应用新配置失败:", e, flush=True)
+        return cfg
 
 
 def build():

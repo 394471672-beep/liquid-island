@@ -19,7 +19,7 @@ from AppKit import (
     NSApplication, NSApplicationActivationPolicyAccessory, NSImage, NSMenu,
     NSMenuItem, NSObject, NSStatusBar, NSVariableStatusItemLength,
 )
-from Foundation import NSTimer
+from Foundation import NSDistributedNotificationCenter, NSTimer
 from PyObjCTools import AppHelper
 
 import config as cfgmod
@@ -48,7 +48,94 @@ class AppAgent(NSObject):
         self.sw_on = bool(self.cfg["switcher"].get("enabled", True))
         self.island_on = bool(self.cfg["island"].get("enabled", True))
         self._slow_tick = 0        # tick 计数，用来把慢活摊到每 N 拍做一次
+        self._cfg_stamp = None     # 配置文件指纹，变了就热更新
+        self.menu_items = {}       # 菜单项引用（勾选状态要跟着配置同步）
         return self
+
+    # ── 配置热更新 ────────────────────────────────────────
+    @objc.python_method
+    def cfg_stamp(self):
+        """配置文件指纹（mtime + 大小）。
+
+        为什么不只比 mtime：连续两次快速保存可能落在同一秒内，
+        mtime 精度不够就会漏掉一次更新。
+        """
+        try:
+            st = os.stat(cfgmod.CONFIG_PATH)
+            return (st.st_mtime_ns, st.st_size)
+        except Exception:
+            return None
+
+    @objc.python_method
+    def apply_config(self, cfg=None):
+        """把新配置应用到**正在运行**的各模块，不重启。
+
+        两个触发来源：
+          ① 设置面板保存后回调（最快，点完立刻生效）
+          ② tick 里发现 config.json 指纹变了（兜底：手动改文件、
+             或设置面板跑在别的进程里、回调没接上的情况）
+        """
+        cfg = cfg if cfg is not None else cfgmod.load()
+        self.cfg = cfg
+
+        island_on = bool(cfg["island"].get("enabled", True))
+        sw_on = bool(cfg["switcher"].get("enabled", True))
+
+        # 0) 先刷新 island 模块的全局变量（尺寸/主题/位置/它持有的 CFG）。
+        #    必须放在最前面：下面若走到 build()（岛从关到开），
+        #    IslandGroup 是读 island.CFG 决定建在哪个屏的，不刷就用了旧值。
+        try:
+            islandmod.reload_config(cfg)
+        except Exception as e:
+            print("[main] 刷新岛配置失败:", e, flush=True)
+
+        # 1) 灵动岛：只有开关状态翻转时才建/销毁，其余一律原地重排
+        #    （销毁重建会闪一下，还会丢掉展开状态和缩略图缓存）
+        try:
+            if island_on and self.island_ctrl is None:
+                self.island_ctrl = islandmod.build()
+            elif not island_on and self.island_ctrl is not None:
+                self.island_ctrl.close()
+                self.island_ctrl = None
+            elif self.island_ctrl is not None:
+                self.island_ctrl.apply_config(cfg)
+            self.island_on = island_on
+        except Exception as e:
+            print("[main] 灵动岛应用新配置失败:", e, flush=True)
+
+        # 2) 窗口切换器
+        try:
+            self.sw.apply_config(cfg)
+        except Exception as e:
+            print("[main] 切换器应用新配置失败:", e, flush=True)
+        self.sw_on = sw_on
+
+        # 3) 全局热键：按键组合和开关都可能改了
+        try:
+            sw_cfg = cfg["switcher"]
+            self.mon.set_keys(sw_cfg.get("hold_key", "option"),
+                              sw_cfg.get("cycle_key", "tab"))
+            self.mon.set_options(sw_cfg.get("reverse_with_shift", True))
+            if sw_on and not self.mon.running:
+                self.mon.start()
+            elif not sw_on and self.mon.running:
+                self.mon.stop()
+        except Exception as e:
+            print("[main] 热键更新失败:", e, flush=True)
+
+        # 4) 菜单栏勾选状态
+        self.sync_menu_state()
+        self._cfg_stamp = self.cfg_stamp()
+        print("[main] 配置已生效（无需重启）", flush=True)
+
+    @objc.python_method
+    def sync_menu_state(self):
+        it_island = self.menu_items.get("island")
+        if it_island is not None:
+            it_island.setState_(1 if self.island_on else 0)
+        it_sw = self.menu_items.get("switcher")
+        if it_sw is not None:
+            it_sw.setState_(1 if self.sw_on else 0)
 
     # ── 装配 ─────────────────────────────────────────────
     @objc.python_method
@@ -76,9 +163,22 @@ class AppAgent(NSObject):
         if self.cfg["general"].get("show_menubar_icon", True):
             self.build_menubar()
 
+        self._cfg_stamp = self.cfg_stamp()
+
         # 5) 主循环里的杂活：收切换器缩略图、看 STOP 文件
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             0.05, self, "tick:", None, True)
+
+        # 5.5) 外部唤出入口。
+        #   设置面板**必须**跑在本进程里：它要是另起一个进程，改的配置
+        #   只写进了 json，主进程浑然不觉，「点完没反应」「重启才生效」
+        #   就是这么来的。给一条分布式通知，外部也能让主进程自己开窗。
+        try:
+            NSDistributedNotificationCenter.defaultCenter() \
+                .addObserver_selector_name_object_(
+                    self, "onExternal:", "com.liquidisland.action", None)
+        except Exception as e:
+            print("[main] 外部通知注册失败:", e, flush=True)
 
         # 6) 首次运行 / 缺权限 → 弹引导（菜单栏常驻应用没有窗口，
         #    不弹的话用户只会觉得「装了没反应」）
@@ -143,17 +243,19 @@ class AppAgent(NSObject):
         it2.setTarget_(self)
         it2.setState_(1 if self.island_on else 0)
         menu.addItem_(it2)
+        self.menu_items["island"] = it2
 
         it3 = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "启用窗口切换器", "actToggleSwitcher_", "")
         it3.setTarget_(self)
         it3.setState_(1 if self.sw_on else 0)
         menu.addItem_(it3)
+        self.menu_items["switcher"] = it3
 
         menu.addItem_(NSMenuItem.separatorItem())
 
         it4 = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "重载配置（重启）", "actReload_", "r")
+            "重新载入配置", "actReload_", "r")
         it4.setTarget_(self)
         menu.addItem_(it4)
 
@@ -175,9 +277,20 @@ class AppAgent(NSObject):
     def actPrefs_(self, sender):
         try:
             import prefs
-            prefs.open_window(self.cfg)
+            # 传 on_saved：设置面板一保存就立刻热应用，
+            # 不用等 tick 兜底，也不用重启（老大明确要求改掉「改完要重启」）。
+            prefs.open_window(self.cfg, on_saved=self.on_prefs_saved,
+                              on_restart=self.restart)
         except Exception as e:
             print("[main] 打开设置失败:", e, flush=True)
+
+    @objc.python_method
+    def on_prefs_saved(self, cfg):
+        """设置面板保存后的回调（在 WKWebView 的回调线程上）。"""
+        try:
+            self.apply_config(cfg)
+        except Exception as e:
+            print("[main] 应用设置失败:", e, flush=True)
 
     def actOnboard_(self, sender):
         try:
@@ -201,18 +314,23 @@ class AppAgent(NSObject):
             print("[main] 打开关于失败:", e, flush=True)
 
     def actToggleIsland_(self, sender):
-        """开关灵动岛：改配置 + 重启进程（最稳，避免半开半关状态）。"""
+        """开关灵动岛：改配置后**立刻生效**，不重启。"""
         self.cfg["island"]["enabled"] = not self.island_on
         cfgmod.save(self.cfg)
-        self.restart()
+        self.apply_config(self.cfg)
 
     def actToggleSwitcher_(self, sender):
         self.cfg["switcher"]["enabled"] = not self.sw_on
         cfgmod.save(self.cfg)
-        self.restart()
+        self.apply_config(self.cfg)
 
     def actReload_(self, sender):
-        self.restart()
+        """重新载入 config.json 并立刻生效。
+
+        以前这个菜单是「重启进程」——配置文件被别的途径改了（手动编辑、
+        设置面板跑在独立进程里）只能靠重启。现在直接热应用即可。
+        """
+        self.apply_config(cfgmod.load())
 
     def actQuit_(self, sender):
         try:
@@ -224,10 +342,18 @@ class AppAgent(NSObject):
 
     @objc.python_method
     def restart(self):
-        """重启自己（改配置后最省事、最不容易出脏状态）。"""
+        """重启自己。
+
+        ⚠️ 单实例保护是 pgrep 查「还有没有别的 main.py 在跑」，而旧进程要等
+        terminate 真正落地才消失。直接 Popen 新进程会被**自己的保护**拦掉，
+        表现就是用户看到「点了重启，毫无反应」。
+        所以交给一个脱离本进程的 shell：先睡 1.2 秒等旧的退干净，再拉新的。
+        """
+        import shlex
+        cmd = ("sleep 1.2; cd %s; %s main.py"
+               % (shlex.quote(BASE), shlex.quote(sys.executable)))
         try:
-            subprocess.Popen([sys.executable, os.path.join(BASE, "main.py")],
-                             cwd=BASE)
+            subprocess.Popen(["/bin/sh", "-c", cmd], start_new_session=True)
         except Exception as e:
             print("[main] 重启失败:", e, flush=True)
         NSApplication.sharedApplication().terminate_(None)
@@ -282,6 +408,25 @@ class AppAgent(NSObject):
         if self.island_ctrl is not None:
             self.island_ctrl.set_suspended(False)
 
+    def onExternal_(self, note):
+        """外部分布式通知 `com.liquidisland.action` → 在主进程里执行。
+
+        object 取值：openprefs（开设置）/ reload（重载配置）/ quit（退出）。
+        """
+        try:
+            act = str(note.object() or "")
+        except Exception:
+            act = ""
+        try:
+            if act == "openprefs":
+                self.actPrefs_(None)
+            elif act == "reload":
+                self.actReload_(None)
+            elif act == "quit":
+                self.actQuit_(None)
+        except Exception as e:
+            print("[main] 外部指令处理失败:", e, flush=True)
+
     @objc.python_method
     def on_perm_changed(self):
         """引导里授权完成后回调：权限缓存清掉，并重试此前失败的热键。
@@ -305,8 +450,20 @@ class AppAgent(NSObject):
                 if self.sw.pending_reload:
                     self.sw.pending_reload = False
                     self.sw._reload()
-            # 每 ≈2 秒：同步屏幕配置（插拔外接屏 / monitor=mouse 跟随）
             self._slow_tick += 1
+
+            # 每 ≈0.5 秒：配置文件被动了就热应用。
+            # 这是兜底路径——设置面板正常走 on_saved 回调（即时），
+            # 但手动编辑 config.json、或设置面板跑在独立进程里时只能靠这里。
+            if self._slow_tick % 10 == 0:
+                try:
+                    st = self.cfg_stamp()
+                    if st is not None and st != self._cfg_stamp:
+                        self.apply_config()
+                except Exception as e:
+                    print("[main] 配置变更检测失败:", e, flush=True)
+
+            # 每 ≈2 秒：同步屏幕配置（插拔外接屏 / monitor=mouse 跟随）
             if self._slow_tick % 40 == 0 and self.island_ctrl is not None:
                 try:
                     self.island_ctrl.sync_screens()

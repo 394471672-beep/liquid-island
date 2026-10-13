@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 import objc
 from AppKit import (
@@ -46,6 +47,8 @@ class PrefsBridge(NSObject):
             return None
         self.cfg = cfg
         self.web = None
+        self.on_saved = None      # 保存后回调（主进程用它做热更新）
+        self.on_restart = None    # 重启回调（主进程版）
         return self
 
     # ── WKScriptMessageHandler ────────────────────────────
@@ -112,6 +115,19 @@ class PrefsBridge(NSObject):
             except Exception as e:
                 print("[prefs] 开机自启设置失败:", e, flush=True)
         print("[prefs] 配置已保存", flush=True)
+        # 立刻通知主进程热应用 —— 改位置/主题/尺寸要当场看到效果，不能等重启。
+        # 这条走不到也没关系：main 的 tick 里还有配置文件指纹兜底。
+        if self.on_saved is not None:
+            try:
+                self.on_saved(cfg)
+            except Exception as e:
+                print("[prefs] 通知主进程失败:", e, flush=True)
+        else:
+            try:
+                self.web.evaluateJavaScript_completionHandler_(
+                    "window.__toast('已保存并生效')", None)
+            except Exception:
+                pass
 
     @objc.python_method
     def _open_onboard(self):
@@ -135,24 +151,48 @@ class PrefsBridge(NSObject):
 
     @objc.python_method
     def _restart(self):
+        """重启主程序（兜底用；绝大多数配置现在都能热更新，不必重启）。
+
+        ⚠️ 这里有个坑：如果本设置面板是**独立进程**（不是主程序自己开的），
+        直接 Popen main.py 会被主程序的单实例保护拦掉 —— 旧进程还在跑，
+        新的当场退出，用户看到的就是「点了重启，毫无反应」。
+        所以独立进程时先让旧主程序退干净再拉新的。
+        """
+        if self.on_restart is not None:
+            self.on_restart()          # 主进程自己重启（正常路径）
+            return
         try:
+            subprocess.run(["pkill", "-f", "liquid_island/main.py"], timeout=6)
+            time.sleep(1.2)
             subprocess.Popen([sys.executable, os.path.join(BASE, "main.py")],
-                             cwd=BASE)
+                             cwd=BASE, start_new_session=True)
         except Exception as e:
             print("[prefs] 重启失败:", e, flush=True)
         NSApplication.sharedApplication().terminate_(None)
 
 
-def open_window(cfg):
-    """打开（或前置）设置窗口。"""
+def open_window(cfg, on_saved=None, on_restart=None):
+    """打开（或前置）设置窗口。
+
+    on_saved(cfg)：保存后回调，主进程用它立刻热应用配置。
+    on_restart()  ：重启回调，主进程用它重启自己。
+
+    这两个回调**建议一定传**：不传就说明设置面板跑在别的进程里，
+    改完配置主进程感知不到（只能靠 tick 里的文件指纹兜底，慢半拍）。
+    """
     global _win, _holder
     app = NSApplication.sharedApplication()
     if _win is not None:
+        if _holder is not None and on_saved is not None:
+            _holder.on_saved = on_saved
+            _holder.on_restart = on_restart
         _win.makeKeyAndOrderFront_(None)
         app.activateIgnoringOtherApps_(True)
         return _win
 
     holder = PrefsBridge.alloc().initWithCfg_(cfg)
+    holder.on_saved = on_saved
+    holder.on_restart = on_restart
     conf = WKWebViewConfiguration.alloc().init()
     ucc = WKUserContentController.alloc().init()
     ucc.addScriptMessageHandler_name_(holder, "bridge")

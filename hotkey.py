@@ -43,6 +43,7 @@ class HotkeyMonitor(object):
         self.active = False
         self.swallow_cycle_up = False
         self.enabled = True
+        self.reverse_shift = True   # Shift+循环键反向（switcher.reverse_with_shift）
 
     @property
     def running(self):
@@ -55,6 +56,10 @@ class HotkeyMonitor(object):
             self.hold_key = hold_key
         if cycle_key in CYCLE_KEYS:
             self.cycle_key = cycle_key
+
+    def set_options(self, reverse_with_shift=True):
+        """Shift 是否反向循环。以前这个值写死在回调里，配置项没人读。"""
+        self.reverse_shift = bool(reverse_with_shift)
 
     def _hold_mask(self):
         return HOLD_KEYS.get(self.hold_key, HOLD_KEYS["option"])[0]
@@ -126,7 +131,8 @@ class HotkeyMonitor(object):
                 if self.active and kc == cyc:
                     flags = Quartz.CGEventGetFlags(event)
                     self.swallow_cycle_up = True
-                    self.on_cycle(-1 if (flags & SHIFT_MASK) else 1)
+                    rev = self.reverse_shift and bool(flags & SHIFT_MASK)
+                    self.on_cycle(-1 if rev else 1)
                     return None         # 吞掉，避免系统也处理
                 if self.active and kc == ESC_CODE:
                     self.active = False

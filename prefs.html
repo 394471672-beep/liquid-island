@@ -463,12 +463,13 @@
           液态岛把两个工具合成一个程序：<br>
           · <b>灵动岛</b> —— 屏幕顶部/侧边的玻璃胶囊，看当前打开了哪些应用，悬停出窗口卡片<br>
           · <b>窗口切换器</b> —— 按住修饰键连按循环键切换窗口（替代 AltTab）<br><br>
-          改完设置会立即写入配置文件；<b>外观类改动需要重启才生效</b>（点下面的按钮）。
-        </div>
-        <div class="row"><div class="name"><b>重启程序</b>
-          <span>让所有改动生效</span></div>
-          <div class="ctl"><button class="btn primary" id="btn-restart">
-            <svg class="ic"><use href="#ic-restart"/></svg>立即重启</button></div></div>
+           改完设置会立刻写入配置文件，并且<b>立刻生效，不需要重启</b>。
+           下方按钮只在极少数情况下才用得上（比如手动改坏了配置文件想整体重载）。
+         </div>
+         <div class="row"><div class="name"><b>重启程序</b>
+           <span>兜底用；绝大多数改动即时生效，不必点它</span></div>
+           <div class="ctl"><button class="btn" id="btn-restart">
+             <svg class="ic"><use href="#ic-restart"/></svg>重启程序</button></div></div>
       </div>
     </section>
 
@@ -476,11 +477,11 @@
 </main>
 
 <footer>
-  <div class="hint" id="hint">改动会自动保存</div>
+  <div class="hint" id="hint">改动即时生效，无需重启</div>
   <button class="btn" id="btn-open-cfg">
     <svg class="ic"><use href="#ic-folder"/></svg>打开配置文件夹</button>
-  <button class="btn primary" id="btn-restart2">
-    <svg class="ic"><use href="#ic-restart"/></svg>重启生效</button>
+  <button class="btn" id="btn-restart2">
+    <svg class="ic"><use href="#ic-restart"/></svg>重启程序</button>
 </footer>
 
 <script>
@@ -546,8 +547,8 @@ function scheduleSave(){
   clearTimeout(timer);
   timer = setTimeout(()=>{
     post({action:'save', config: collect()});
-    h.textContent = '已保存 ✓ 外观类改动需重启生效';
-    setTimeout(()=>{ h.textContent = '改动会自动保存'; }, 2600);
+    h.textContent = '已保存 ✓ 已即时生效';
+    setTimeout(()=>{ h.textContent = '改动即时生效，无需重启'; }, 2600);
   }, 320);
 }
 
@@ -612,7 +613,7 @@ document.getElementById('btn-open-cfg').addEventListener('click', ()=>{
 window.__toast = function(msg){
   const h = document.getElementById('hint');
   h.textContent = msg;
-  setTimeout(()=>{ h.textContent = '改动会自动保存'; }, 3200);
+  setTimeout(()=>{ h.textContent = '改动即时生效，无需重启'; }, 3200);
 };
 
 /* Python 回填配置 */

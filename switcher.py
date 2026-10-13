@@ -194,6 +194,46 @@ class Switcher(object):
             self.board.addSublayer_(cb)
             self.cells.append({"bg": cb, "img": ci, "icon": ic, "label": lb})
 
+    def _rebuild_layers(self):
+        """按新配置重建图层骨架（列数 / 主题变了才需要）。"""
+        try:
+            self.view.layer().setSublayers_(None)
+        except Exception:
+            pass
+        self.cells = []
+        self._build_layers()
+
+    def apply_config(self, cfg):
+        """配置热更新。
+
+        切换器只在按住热键时才可见，所以分两种情况处理：
+        · 没打开 —— 换配置引用就行，下次 _begin() 自然用上
+          （_layout_board / _reload 都是现读 self.cfg 的）
+        · 正打开 —— 重排 + 重画，让你立刻看到效果
+
+        只有「图层骨架级」的配置（列数、主题）才需要重建图层；
+        缩略图大小、间距这类每次 _layout_board() 都会重算，不必重建。
+        """
+        old = self.cfg.get("switcher", {}) if isinstance(self.cfg, dict) else {}
+        skel_changed = (
+            old.get("columns") != cfg["switcher"].get("columns")
+            or old.get("theme") != cfg["switcher"].get("theme")
+            or old.get("background_dim") != cfg["switcher"].get("background_dim")
+            or old.get("corner_radius") != cfg["switcher"].get("corner_radius"))
+        self.cfg = cfg
+
+        if self.panel is None:
+            return                       # 窗口还没建，下次 _ensure_window 会用新值
+        if skel_changed:
+            self._rebuild_layers()
+        if self.visible:
+            try:
+                self._layout_board()
+                self._render()
+                self._start_thumbs()
+            except Exception as e:
+                print("[switcher] 应用新配置失败:", e, flush=True)
+
     # ── 开始 / 结束 ──────────────────────────────────────
     def _begin(self):
         """热键按下时调用：立即显示（用缓存），并排一次刷新。"""
