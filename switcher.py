@@ -118,6 +118,8 @@ class Switcher(object):
         panel.setOpaque_(False)
         panel.setBackgroundColor_(NSColor.clearColor())
         panel.setHasShadow_(False)
+        # 同 island / prefs：默认 releasedWhenClosed=YES 会留下野指针
+        panel.setReleasedWhenClosed_(False)
         panel.setCollectionBehavior_(
             NSWindowCollectionBehaviorCanJoinAllSpaces
             | NSWindowCollectionBehaviorStationary)

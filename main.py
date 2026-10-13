@@ -263,6 +263,11 @@ class AppAgent(NSObject):
         it5 = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "退出", "actQuit_", "q")
         it5.setTarget_(self)
+        # 关掉「自动启用」：菜单栏应用没有标准 responder chain，
+        # AppKit 有时会误判 action 不可用，把「退出」置灰点不动。
+        # 退出必须永远可点，所以这里手动兜住。
+        menu.setAutoenablesItems_(False)
+        it5.setEnabled_(True)
         menu.addItem_(it5)
 
         menu.addItem_(NSMenuItem.separatorItem())
@@ -281,7 +286,8 @@ class AppAgent(NSObject):
             # 传 on_saved：设置面板一保存就立刻热应用，
             # 不用等 tick 兜底，也不用重启（老大明确要求改掉「改完要重启」）。
             prefs.open_window(self.cfg, on_saved=self.on_prefs_saved,
-                              on_restart=self.restart)
+                              on_restart=self.restart,
+                              on_quit=lambda: self.actQuit_(None))
         except Exception as e:
             print("[main] 打开设置失败:", e, flush=True)
 
@@ -334,12 +340,35 @@ class AppAgent(NSObject):
         self.apply_config(cfgmod.load())
 
     def actQuit_(self, sender):
+        """退出。
+
+        ⚠️ 这里每一步都必须单独 try：以前 `self.mon.stop()` 抛一次异常
+        （mon 还没建好 / 已经停过），后面的 terminate_ 就永远执行不到 ——
+        用户点了「退出」却纹丝不动，看着就像菜单坏了。
+        """
         try:
             open(STOP_FILE, "w").close()
         except Exception:
             pass
-        self.mon.stop()
-        NSApplication.sharedApplication().terminate_(None)
+        try:
+            if self.mon is not None:
+                self.mon.stop()
+        except Exception as e:
+            print("[main] 停止监听失败:", e, flush=True)
+        try:
+            NSApplication.sharedApplication().terminate_(None)
+        except Exception as e:
+            print("[main] terminate 失败，强制退出:", e, flush=True)
+        # 兜底：AppKit 不理我们的话，0.6 秒后自己了断，
+        # 保证「点了退出一定退得掉」。
+        import threading
+
+        def _hard_exit():
+            import time as _t
+            _t.sleep(0.6)
+            os._exit(0)
+
+        threading.Thread(target=_hard_exit, daemon=True).start()
 
     @objc.python_method
     def restart(self):

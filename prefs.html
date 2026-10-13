@@ -482,6 +482,8 @@
     <svg class="ic"><use href="#ic-folder"/></svg>打开配置文件夹</button>
   <button class="btn" id="btn-restart2">
     <svg class="ic"><use href="#ic-restart"/></svg>重启程序</button>
+  <button class="btn" id="btn-quit">
+    <svg class="ic" viewBox="0 -960 960 960"><path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h280v80H200Zm440-160-55-58 102-102H360v-80h327L585-622l55-58 200 200-200 200Z"/></svg>退出液态岛</button>
 </footer>
 
 <script>
@@ -608,6 +610,10 @@ document.getElementById('btn-diag').addEventListener('click', ()=>{
 });
 document.getElementById('btn-open-cfg').addEventListener('click', ()=>{
   post({action:'openconfig'});
+});
+document.getElementById('btn-quit').addEventListener('click', ()=>{
+  if (confirm('退出液态岛？（菜单栏图标和灵动岛都会消失，需要时再打开 App）'))
+    post({action:'quit'});
 });
 /* Python 侧用来提示（比如开机自启的结果） */
 window.__toast = function(msg){

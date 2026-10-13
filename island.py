@@ -1790,6 +1790,9 @@ def make_controller(screen=None):
     panel.setOpaque_(False)
     panel.setBackgroundColor_(NSColor.clearColor())
     panel.setHasShadow_(False)
+    # 和设置面板同一个坑：默认 releasedWhenClosed=YES，
+    # 一旦窗口被关掉，持有它的 Python 变量就成了野指针。
+    panel.setReleasedWhenClosed_(False)
     panel.setCollectionBehavior_(
         NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary)
 

@@ -49,6 +49,7 @@ class PrefsBridge(NSObject):
         self.web = None
         self.on_saved = None      # 保存后回调（主进程用它做热更新）
         self.on_restart = None    # 重启回调（主进程版）
+        self.on_quit = None       # 退出回调（主进程版）
         return self
 
     # ── WKScriptMessageHandler ────────────────────────────
@@ -72,6 +73,8 @@ class PrefsBridge(NSObject):
                 self._open_diagnostics()
             elif action == "openconfig":
                 subprocess.Popen(["open", cfgmod.CONFIG_DIR])
+            elif action == "quit":
+                self._quit()
         except Exception as e:
             print("[prefs] 消息处理失败:", e, flush=True)
 
@@ -150,6 +153,33 @@ class PrefsBridge(NSObject):
             print("[prefs] 打开诊断失败:", e, flush=True)
 
     @objc.python_method
+    def _quit(self):
+        """退出整个程序（设置面板底部的「退出液态岛」）。
+
+        菜单栏常驻应用没有 Dock 图标可右键退出，菜单栏那一项又可能因为
+        没有标准 responder chain 被 AppKit 置灰，所以面板里必须留一个
+        一定点得到的出口。
+        """
+        if self.on_quit is not None:
+            try:
+                self.on_quit()
+                return
+            except Exception as e:
+                print("[prefs] 退出回调失败，自己退:", e, flush=True)
+        try:
+            NSApplication.sharedApplication().terminate_(None)
+        except Exception:
+            pass
+        import threading
+
+        def _hard():
+            import time as _t
+            _t.sleep(0.6)
+            os._exit(0)
+
+        threading.Thread(target=_hard, daemon=True).start()
+
+    @objc.python_method
     def _restart(self):
         """重启主程序（兜底用；绝大多数配置现在都能热更新，不必重启）。
 
@@ -171,11 +201,12 @@ class PrefsBridge(NSObject):
         NSApplication.sharedApplication().terminate_(None)
 
 
-def open_window(cfg, on_saved=None, on_restart=None):
+def open_window(cfg, on_saved=None, on_restart=None, on_quit=None):
     """打开（或前置）设置窗口。
 
     on_saved(cfg)：保存后回调，主进程用它立刻热应用配置。
     on_restart()  ：重启回调，主进程用它重启自己。
+    on_quit()     ：退出回调，主进程用它真正退出（不是只关面板）。
 
     这两个回调**建议一定传**：不传就说明设置面板跑在别的进程里，
     改完配置主进程感知不到（只能靠 tick 里的文件指纹兜底，慢半拍）。
@@ -183,9 +214,14 @@ def open_window(cfg, on_saved=None, on_restart=None):
     global _win, _holder
     app = NSApplication.sharedApplication()
     if _win is not None:
-        if _holder is not None and on_saved is not None:
-            _holder.on_saved = on_saved
-            _holder.on_restart = on_restart
+        if _holder is not None:
+            # 复用旧窗口时回调也要换成当前的（主进程可能重启过）
+            if on_saved is not None:
+                _holder.on_saved = on_saved
+            if on_restart is not None:
+                _holder.on_restart = on_restart
+            if on_quit is not None:
+                _holder.on_quit = on_quit
         _win.makeKeyAndOrderFront_(None)
         app.activateIgnoringOtherApps_(True)
         return _win
@@ -193,6 +229,7 @@ def open_window(cfg, on_saved=None, on_restart=None):
     holder = PrefsBridge.alloc().initWithCfg_(cfg)
     holder.on_saved = on_saved
     holder.on_restart = on_restart
+    holder.on_quit = on_quit
     conf = WKWebViewConfiguration.alloc().init()
     ucc = WKUserContentController.alloc().init()
     ucc.addScriptMessageHandler_name_(holder, "bridge")
@@ -210,6 +247,12 @@ def open_window(cfg, on_saved=None, on_restart=None):
     win.setTitle_("液态岛 · 设置")
     win.setContentView_(web)
     win.center()
+    # ⚠️ 这行是救命的：NSWindow 默认 releasedWhenClosed=YES。
+    # 不关掉它的话，用户把设置面板关了 → 窗口对象被系统释放，
+    # 而模块里的 _win 还指向那块已释放的内存；下次点「打开设置」
+    # 走 _win.makeKeyAndOrderFront_() → 野指针 → 整个 App SIGSEGV 崩掉。
+    # 表现是「点了设置毫无反应」——其实是进程已经死了，岛也没了。
+    win.setReleasedWhenClosed_(False)
     win.makeKeyAndOrderFront_(None)
 
     url = NSURL.fileURLWithPath_(HTML)
