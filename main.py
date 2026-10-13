@@ -191,6 +191,12 @@ class AppAgent(NSObject):
         try:
             import onboarding
             if onboarding.should_show(self.cfg):
+                # 主动申请一次：把液态岛登记进系统设置列表 + 触发系统授权弹窗。
+                # 以前只有用户点引导窗「去授权」才登记——大量用户卡在
+                # "系统设置列表里找不到这个 App"，表现就是「点击毫无反应」。
+                # 权限按签名记账（ad-hoc 重签后会失效），失效时启动就重新申请。
+                if not (core.has_ax_perm() and core.has_screen_perm()):
+                    core.request_permissions()
                 onboarding.open_window(self.cfg, on_finish=self.on_perm_changed)
         except Exception as e:
             print("[main] 引导窗口失败:", e, flush=True)
