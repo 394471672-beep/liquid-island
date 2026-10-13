@@ -445,18 +445,50 @@ class AppAgent(NSObject):
 
         ⚠️ 单实例锁是 flock：直接 Popen 新进程会被锁挡住（或挡住别人），
         表现就是「点了重启，毫无反应」。用 `--takeover` 模式拉起新进程：
-        它负责 SIGTERM 旧实例、等 flock 释放后接管启动，打包版/源码版都适用。
-        旧实现是 `sleep 1.2; python main.py`——打包后那跑的是源码副本，
-        双实例 + 权限身份还不一样，已废。
+        它负责 SIGTERM 旧实例、等 flock 释放后接管启动。
+
+        ⚠️⚠️ 必须拉起主可执行 `Liquid Island`（stub），【不是】 sys.executable！
+        sys.executable 在打包后是 `Contents/MacOS/python`，直接 Popen 它：
+        dyld 找不到 libpython3.13.dylib（rpath 缺 Frameworks）→ 子进程起不来
+        → 旧实例已退、新的没起 → **App 整个消失**（用户点重启=软件没了，
+        实测踩雷：dyld: Library not loaded: @rpath/libpython3.13.dylib）。
+        同理 NSBundle.mainBundle().executablePath() 在某些上下文也会返回
+        python——所以多候选 + basename 过滤，只认 "Liquid Island"。
         """
+        # 候选可执行路径（按可靠度排序）
+        candidates = []
         try:
-            if "液态岛.app/Contents/MacOS" in sys.executable:
-                cmd = [sys.executable, "--takeover"]
+            from Foundation import NSBundle
+            p = str(NSBundle.mainBundle().executablePath() or "")
+            if p:
+                candidates.append(p)
+        except Exception:
+            pass
+        if sys.argv and sys.argv[0]:
+            candidates.append(os.path.abspath(sys.argv[0]))
+        if sys.executable:
+            candidates.append(
+                os.path.join(os.path.dirname(sys.executable), "Liquid Island"))
+        # 只认 basename 正好是 "Liquid Island" 且存在的（把 python 过滤掉）
+        exe = next((c for c in candidates
+                    if c and os.path.basename(c) == "Liquid Island"
+                    and os.path.exists(c)), None)
+        try:
+            if exe is not None:
+                cmd = [exe, "--takeover"]
             else:
+                # 源码直跑模式
                 cmd = [sys.executable,
                        os.path.abspath(os.path.join(BASE, "main.py")), "--takeover"]
-            subprocess.Popen(cmd, start_new_session=True)
-            print("[main] 已拉起接管进程，准备退出自己", flush=True)
+            # ⚠️ stdin/stdout/stderr 必须显式给：App（尤其 launchd/后台拉起时）的
+            # stdin 可能是无效 fd，子进程 Python 初始化直接
+            # Fatal Python error: init_sys_streams: Bad file descriptor 崩掉。
+            # 输出追加到固定日志，和 LaunchAgent 的日志同文件，排查时有着落。
+            logf = open(os.path.expanduser("~/Library/Logs/liquid-island.log"), "a")
+            subprocess.Popen(cmd, start_new_session=True,
+                             stdin=subprocess.DEVNULL,
+                             stdout=logf, stderr=logf)
+            print(f"[main] 已拉起接管进程（{cmd[0]}），准备退出自己", flush=True)
         except Exception as e:
             print("[main] 重启失败:", e, flush=True)
             return
