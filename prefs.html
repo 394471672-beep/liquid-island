@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>液态岛 · 设置</title>
+<style>
+  :root{
+    --bg:#0d0e12; --panel:rgba(255,255,255,.055); --panel2:rgba(255,255,255,.035);
+    --edge:rgba(255,255,255,.10); --edge-hi:rgba(255,255,255,.22);
+    --text:#ecedf1; --dim:#9a9cab; --accent:#4DC1FF; --accent2:#7ef0c8;
+    --radius:16px;
+  }
+  *{box-sizing:border-box; -webkit-user-select:none}
+  html,body{margin:0;height:100%;font:13.5px/1.6 -apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+    color:var(--text);background:
+      radial-gradient(1200px 700px at 78% -10%, #1d3a52 0%, transparent 60%),
+      radial-gradient(900px 600px at 8% 108%, #2a2140 0%, transparent 55%),
+      var(--bg);}
+  body{display:flex;flex-direction:column;overflow:hidden}
+
+  header{padding:20px 24px 12px;display:flex;align-items:baseline;gap:12px}
+  header h1{margin:0;font-size:17px;letter-spacing:.4px;font-weight:600}
+  header .sub{color:var(--dim);font-size:12px}
+
+  main{flex:1;display:flex;min-height:0;gap:0}
+  nav{width:172px;padding:6px 12px;display:flex;flex-direction:column;gap:4px;flex:none}
+  nav button{
+    all:unset;padding:9px 12px;border-radius:11px;color:var(--dim);cursor:default;
+    font-size:13px;border:1px solid transparent}
+  nav button:hover{background:var(--panel2);color:var(--text)}
+  nav button.on{background:var(--panel);color:var(--text);border-color:var(--edge);
+    box-shadow:0 6px 18px rgba(0,0,0,.35)}
+
+  .content{flex:1;overflow-y:auto;padding:8px 26px 22px 10px}
+  .group{display:none}
+  .group.on{display:block;animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .card{
+    background:var(--panel);border:1px solid var(--edge);border-radius:var(--radius);
+    padding:4px 16px;margin:0 0 16px;backdrop-filter:blur(20px) saturate(150%);
+    box-shadow:0 10px 30px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06)}
+  .card h2{margin:14px 0 2px;font-size:12px;letter-spacing:1.2px;color:var(--dim);
+    text-transform:uppercase;font-weight:600}
+  .row{display:flex;align-items:center;gap:14px;padding:11px 0;
+    border-bottom:1px solid rgba(255,255,255,.055)}
+  .row:last-child{border-bottom:none}
+  .row .name{flex:1;min-width:0}
+  .row .name b{display:block;font-weight:500;font-size:13.5px}
+  .row .name span{display:block;color:var(--dim);font-size:11.5px;margin-top:1px}
+  .ctl{flex:none;display:flex;align-items:center;gap:9px}
+
+  select,input[type=number]{all:unset;background:rgba(255,255,255,.07);
+    border:1px solid var(--edge);color:var(--text);padding:5px 10px;border-radius:9px;
+    min-width:128px;font-size:12.5px;cursor:default}
+  select:hover,input[type=number]:hover{border-color:var(--edge-hi)}
+  input[type=range]{-webkit-appearance:none;width:168px;height:22px;background:transparent}
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:3px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
+    margin-top:-5.5px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.25);
+    box-shadow:0 2px 6px rgba(0,0,0,.45)}
+  .val{width:46px;text-align:right;color:var(--accent);font-variant-numeric:tabular-nums;
+    font-size:12.5px}
+  input[type=color]{-webkit-appearance:none;border:1px solid var(--edge);width:42px;height:26px;
+    border-radius:8px;background:transparent;padding:0}
+  input[type=color]::-webkit-color-swatch-wrapper{padding:2px}
+  input[type=color]::-webkit-color-swatch{border-radius:6px;border:none}
+
+  .sw{position:relative;width:44px;height:25px;border-radius:13px;cursor:default;
+    background:rgba(255,255,255,.12);border:1px solid var(--edge);transition:.18s}
+  .sw::after{content:"";position:absolute;top:2.5px;left:3px;width:18px;height:18px;
+    border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .sw.on{background:linear-gradient(90deg,var(--accent),var(--accent2));border-color:transparent}
+  .sw.on::after{left:22px}
+
+  footer{flex:none;padding:12px 24px 16px;display:flex;align-items:center;gap:10px;
+    border-top:1px solid rgba(255,255,255,.07);background:rgba(8,9,12,.55);
+    backdrop-filter:blur(18px)}
+  footer .hint{flex:1;color:var(--dim);font-size:12px}
+  button.btn{all:unset;padding:8px 16px;border-radius:11px;cursor:default;font-size:13px;
+    background:var(--panel);border:1px solid var(--edge);color:var(--text)}
+  button.btn:hover{border-color:var(--edge-hi);background:rgba(255,255,255,.09)}
+  button.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));
+    color:#06202e;font-weight:600;border-color:transparent}
+  .tip{color:var(--dim);font-size:11.5px;margin:6px 0 12px;padding-left:2px}
+  code{background:rgba(255,255,255,.08);padding:1px 6px;border-radius:6px;font-size:11.5px}
+  .kbd{border:1px solid var(--edge);border-bottom-width:2px;border-radius:6px;
+    padding:1px 7px;font-size:11.5px;background:rgba(255,255,255,.07);margin:0 2px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>液态岛</h1>
+  <div class="sub">灵动岛 + 窗口切换器 · 设置</div>
+</header>
+
+<main>
+  <nav>
+    <button data-tab="island" class="on">灵动岛</button>
+    <button data-tab="windows">窗口卡片</button>
+    <button data-tab="switcher">窗口切换器</button>
+    <button data-tab="general">通用</button>
+    <button data-tab="about">关于 / 权限</button>
+  </nav>
+
+  <div class="content">
+
+    <!-- ══ 灵动岛 ══ -->
+    <section class="group on" id="g-island">
+      <div class="card">
+        <h2>基本</h2>
+        <div class="row"><div class="name"><b>启用灵动岛</b>
+          <span>关掉后只剩窗口切换器</span></div>
+          <div class="ctl"><div class="sw" data-path="island.enabled"></div></div></div>
+        <div class="row"><div class="name"><b>位置</b>
+          <span>顶部三个位置是横向胶囊；侧边为贴边垂直居中</span></div>
+          <div class="ctl"><select data-path="island.position">
+            <option value="top-center">顶部居中</option>
+            <option value="top-left">顶部左侧</option>
+            <option value="top-right">顶部右侧</option>
+            <option value="left">屏幕左缘</option>
+            <option value="right">屏幕右缘</option>
+          </select></div></div>
+        <div class="row"><div class="name"><b>显示在哪个屏幕</b>
+          <span>多屏时：只在主屏 / 跟着鼠标所在屏走 / 每块屏都放一个</span></div>
+          <div class="ctl"><select data-path="island.monitor">
+            <option value="main">只主屏</option>
+            <option value="mouse">鼠标所在屏</option>
+            <option value="all">所有屏幕</option>
+          </select></div></div>
+        <div class="row"><div class="name"><b>收起时的样子</b>
+          <span>iOS 横杠 / 小胶囊 / 小圆点 / 完全隐形（只能靠热区唤出）</span></div>
+          <div class="ctl"><select data-path="island.form">
+            <option value="bar">iOS 横杠</option>
+            <option value="pill">小胶囊</option>
+            <option value="dot">小圆点</option>
+            <option value="invisible">完全隐形</option>
+          </select></div></div>
+        <div class="row"><div class="name"><b>怎么展开</b>
+          <span>鼠标滑过自动展开 / 点一下才展开 / 只用快捷键</span></div>
+          <div class="ctl"><select data-path="island.expand_on">
+            <option value="hover">鼠标滑过</option>
+            <option value="click">点击展开</option>
+            <option value="hotkey">仅快捷键</option>
+          </select></div></div>
+        <div class="row"><div class="name"><b>主题</b>
+          <span>玻璃拟态 / iOS 纯黑 / 浅色玻璃 / 跟随系统</span></div>
+          <div class="ctl"><select data-path="island.theme">
+            <option value="glass">玻璃拟态</option>
+            <option value="dark">iOS 纯黑</option>
+            <option value="light">浅色玻璃</option>
+            <option value="auto">跟随系统</option>
+          </select></div></div>
+        <div class="row"><div class="name"><b>强调色</b>
+          <span>当前应用指示点、选中高亮</span></div>
+          <div class="ctl"><input type="color" data-path="island.accent"></div></div>
+        <div class="row"><div class="name"><b>整体缩放</b>
+          <span>一键放大/缩小全部尺寸</span></div>
+          <div class="ctl"><input type="range" min="1" max="3" step="0.1"
+            data-path="island.scale"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>鼠标离开后收起</b>
+          <span>秒</span></div>
+          <div class="ctl"><input type="range" min="0.1" max="2" step="0.05"
+            data-path="island.auto_collapse"><span class="val"></span></div></div>
+      </div>
+
+      <div class="card">
+        <h2>图标</h2>
+        <div class="row"><div class="name"><b>图标大小</b></div>
+          <div class="ctl"><input type="range" min="24" max="64" step="1"
+            data-path="island.icons.size"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>图标间距</b></div>
+          <div class="ctl"><input type="range" min="4" max="28" step="1"
+            data-path="island.icons.gap"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>左右内边距</b></div>
+          <div class="ctl"><input type="range" min="8" max="36" step="1"
+            data-path="island.icons.pad"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>悬停放大倍率</b>
+          <span>Dock 式，鼠标靠近就变大</span></div>
+          <div class="ctl"><input type="range" min="1" max="2" step="0.05"
+            data-path="island.icons.magnify"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>放大影响半径</b>
+          <span>调大＝波及更远</span></div>
+          <div class="ctl"><input type="range" min="30" max="200" step="2"
+            data-path="island.icons.magnify_dist"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>显示应用名</b></div>
+          <div class="ctl"><div class="sw" data-path="island.show_names"></div></div></div>
+        <div class="row"><div class="name"><b>显示当前应用指示点</b></div>
+          <div class="ctl"><div class="sw" data-path="island.show_active_dot"></div></div></div>
+      </div>
+
+      <div class="card">
+        <h2>唤醒热区</h2>
+        <div class="tip">贴着灵动岛所在位置的一条“隐形感应带”，鼠标滑进去就展开。</div>
+        <div class="row"><div class="name"><b>热区宽度</b>
+          <span>横向感应范围</span></div>
+          <div class="ctl"><input type="range" min="120" max="900" step="10"
+            data-path="island.hotzone.width"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>热区厚度</b>
+          <span>离屏幕边缘多少像素内算触发</span></div>
+          <div class="ctl"><input type="range" min="4" max="40" step="1"
+            data-path="island.hotzone.height"><span class="val"></span></div></div>
+      </div>
+    </section>
+
+    <!-- ══ 窗口卡片 ══ -->
+    <section class="group" id="g-windows">
+      <div class="card">
+        <h2>悬停图标时的窗口卡片</h2>
+        <div class="tip">鼠标停在某应用图标上，下方列出它的每个窗口（点哪张切哪个窗口）。
+          需要「辅助功能」权限；缩略图需要「屏幕录制」权限。</div>
+        <div class="row"><div class="name"><b>启用窗口卡片</b></div>
+          <div class="ctl"><div class="sw" data-path="windows.enabled"></div></div></div>
+        <div class="row"><div class="name"><b>最多显示几张</b></div>
+          <div class="ctl"><input type="range" min="1" max="4" step="1"
+            data-path="windows.max_cards"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>抓窗口缩略图</b>
+          <span>关掉只用图标+标题，更省电</span></div>
+          <div class="ctl"><div class="sw" data-path="windows.thumbs"></div></div></div>
+        <div class="row"><div class="name"><b>停稳多久才加载</b>
+          <span>秒。调大＝快速划过绝不触发</span></div>
+          <div class="ctl"><input type="range" min="0.05" max="0.6" step="0.01"
+            data-path="windows.dwell"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>窗口列表缓存</b>
+          <span>秒。调小＝更实时但更耗 CPU</span></div>
+          <div class="ctl"><input type="range" min="2" max="120" step="1"
+            data-path="windows.cache_ttl"><span class="val"></span></div></div>
+      </div>
+    </section>
+
+    <!-- ══ 切换器 ══ -->
+    <section class="group" id="g-switcher">
+      <div class="card">
+        <h2>快捷键</h2>
+        <div class="tip">用法：按住<span class="kbd">修饰键</span>不放 →
+          连按<span class="kbd">循环键</span>选窗口 → 松开修饰键切过去。
+          <span class="kbd">Shift</span> 反向，<span class="kbd">Esc</span> 取消。</div>
+        <div class="row"><div class="name"><b>启用切换器</b></div>
+          <div class="ctl"><div class="sw" data-path="switcher.enabled"></div></div></div>
+        <div class="row"><div class="name"><b>修饰键</b>
+          <span>按住它</span></div>
+          <div class="ctl"><select data-path="switcher.hold_key">
+            <option value="option">Option ⌥</option>
+            <option value="cmd">Command ⌘</option>
+            <option value="ctrl">Control ⌃</option>
+          </select></div></div>
+        <div class="row"><div class="name"><b>循环键</b>
+          <span>反复按它切换</span></div>
+          <div class="ctl"><select data-path="switcher.cycle_key">
+            <option value="tab">Tab ⇥</option>
+            <option value="grave">` 反引号</option>
+            <option value="space">空格</option>
+            <option value="arrow-right">→ 右方向键</option>
+          </select></div></div>
+      </div>
+
+      <div class="card">
+        <h2>范围与排序</h2>
+        <div class="row"><div class="name"><b>切换范围</b></div>
+          <div class="ctl"><select data-path="switcher.scope">
+            <option value="all-windows">所有窗口（跨应用）</option>
+            <option value="same-app">仅当前应用的窗口</option>
+            <option value="current-screen">仅当前屏幕的窗口</option>
+          </select></div></div>
+        <div class="row"><div class="name"><b>排序</b></div>
+          <div class="ctl"><select data-path="switcher.sort">
+            <option value="recent">最近使用</option>
+            <option value="alpha">按名称</option>
+            <option value="zorder">按层叠顺序</option>
+          </select></div></div>
+      </div>
+
+      <div class="card">
+        <h2>外观</h2>
+        <div class="row"><div class="name"><b>主题</b></div>
+          <div class="ctl"><select data-path="switcher.theme">
+            <option value="glass">玻璃拟态</option>
+            <option value="dark">深色</option>
+            <option value="light">浅色</option>
+          </select></div></div>
+        <div class="row"><div class="name"><b>每行列数</b></div>
+          <div class="ctl"><input type="range" min="2" max="6" step="1"
+            data-path="switcher.columns"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>缩略图宽度</b></div>
+          <div class="ctl"><input type="range" min="160" max="480" step="20"
+            data-path="switcher.thumb_size"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>卡片间距</b></div>
+          <div class="ctl"><input type="range" min="4" max="40" step="2"
+            data-path="switcher.gap"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>圆角</b></div>
+          <div class="ctl"><input type="range" min="0" max="40" step="2"
+            data-path="switcher.corner_radius"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>背景压暗</b>
+          <span>切换器出现时屏幕变暗的程度</span></div>
+          <div class="ctl"><input type="range" min="0" max="0.6" step="0.02"
+            data-path="switcher.background_dim"><span class="val"></span></div></div>
+        <div class="row"><div class="name"><b>显示标题</b></div>
+          <div class="ctl"><div class="sw" data-path="switcher.show_title"></div></div></div>
+        <div class="row"><div class="name"><b>显示应用图标</b></div>
+          <div class="ctl"><div class="sw" data-path="switcher.show_icons"></div></div></div>
+      </div>
+    </section>
+
+    <!-- ══ 通用 ══ -->
+    <section class="group" id="g-general">
+      <div class="card">
+        <h2>通用</h2>
+        <div class="row"><div class="name"><b>显示菜单栏图标</b>
+          <span>点它打开这个设置窗口</span></div>
+          <div class="ctl"><div class="sw" data-path="general.show_menubar_icon"></div></div></div>
+        <div class="row"><div class="name"><b>切换窗口时临时收起灵动岛</b>
+          <span>避免两个浮层叠在一起</span></div>
+          <div class="ctl"><div class="sw" data-path="general.hide_island_while_switching"></div></div></div>
+        <div class="row"><div class="name"><b>开机自动启动</b>
+          <span>写入登录项（登录后自动运行）</span></div>
+          <div class="ctl"><div class="sw" data-path="general.launch_at_login"></div></div></div>
+      </div>
+      <div class="card">
+        <h2>配置文件</h2>
+        <div class="tip">所有设置都存在
+          <code>~/.config/liquid-island/config.json</code>，可以直接改文件。</div>
+        <div class="row"><div class="name"><b>恢复默认设置</b>
+          <span>把配置文件重置为出厂值</span></div>
+          <div class="ctl"><button class="btn" id="btn-defaults">恢复默认</button></div></div>
+      </div>
+    </section>
+
+    <!-- ══ 关于 ══ -->
+    <section class="group" id="g-about">
+      <div class="card">
+        <h2>权限</h2>
+        <div class="tip">macOS 的权限按「进程」记账，换启动方式要重新授权一次。</div>
+        <div class="row"><div class="name"><b>辅助功能</b>
+          <span>枚举窗口、精确切换窗口 —— 没有它切换器不可用</span></div>
+          <div class="ctl"><button class="btn" id="btn-ax">打开设置</button></div></div>
+        <div class="row"><div class="name"><b>屏幕录制</b>
+          <span>抓窗口缩略图 —— 没有它只显示图标和标题</span></div>
+          <div class="ctl"><button class="btn" id="btn-scr">打开设置</button></div></div>
+        <div class="row"><div class="name"><b>权限引导</b>
+          <span>重新打开首次运行的引导，逐项检查授权状态</span></div>
+          <div class="ctl"><button class="btn" id="btn-onboard">打开引导</button></div></div>
+        <div class="row"><div class="name"><b>诊断与自检</b>
+          <span>列出权限、屏幕、登录项和冲突软件，可一键复制给开发者</span></div>
+          <div class="ctl"><button class="btn" id="btn-diag">查看诊断</button></div></div>
+      </div>
+      <div class="card">
+        <h2>关于</h2>
+        <div class="tip">
+          液态岛把两个工具合成一个程序：<br>
+          · <b>灵动岛</b> —— 屏幕顶部/侧边的玻璃胶囊，看当前打开了哪些应用，悬停出窗口卡片<br>
+          · <b>窗口切换器</b> —— 按住修饰键连按循环键切换窗口（替代 AltTab）<br><br>
+          改完设置会立即写入配置文件；<b>外观类改动需要重启才生效</b>（点下面的按钮）。
+        </div>
+        <div class="row"><div class="name"><b>重启程序</b>
+          <span>让所有改动生效</span></div>
+          <div class="ctl"><button class="btn primary" id="btn-restart">立即重启</button></div></div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="hint" id="hint">改动会自动保存</div>
+  <button class="btn" id="btn-open-cfg">打开配置文件夹</button>
+  <button class="btn primary" id="btn-restart2">重启生效</button>
+</footer>
+
+<script>
+const bridge = window.webkit && window.webkit.messageHandlers
+  ? window.webkit.messageHandlers.bridge : null;
+
+function post(obj){ if (bridge) bridge.postMessage(obj); }
+
+/* ── 值收集/回填：靠 data-path，加配置项只改 HTML ── */
+function getVal(el){
+  if (el.classList.contains('sw')) return el.classList.contains('on');
+  if (el.type === 'checkbox') return el.checked;
+  if (el.type === 'range' || el.type === 'number') return parseFloat(el.value);
+  return el.value;
+}
+function setVal(el, v){
+  if (el.classList.contains('sw')){ el.classList.toggle('on', !!v); return; }
+  if (el.type === 'checkbox'){ el.checked = !!v; return; }
+  el.value = v;
+  const val = el.parentElement.querySelector('.val');
+  if (val) val.textContent = fmt(el, v);
+}
+function fmt(el, v){
+  const p = el.dataset.path;
+  if (p.endsWith('scale')) return Number(v).toFixed(1) + '×';
+  if (p.endsWith('magnify')) return Number(v).toFixed(2) + '×';
+  if (p.endsWith('auto_collapse') || p.endsWith('dwell') || p.endsWith('cache_ttl'))
+    return Number(v).toFixed(2).replace(/\.00$/,'') + 's';
+  if (p.endsWith('background_dim')) return Math.round(v*100) + '%';
+  return Number.isInteger(Number(v)) ? String(Number(v)) : Number(v).toFixed(2);
+}
+function collect(){
+  const out = {};
+  document.querySelectorAll('[data-path]').forEach(el=>{
+    const parts = el.dataset.path.split('.');
+    const [sec, key, sub] = parts;
+    out[sec] = out[sec] || {};
+    if (sub !== undefined){
+      out[sec][key] = out[sec][key] || {};
+      out[sec][key][sub] = getVal(el);
+    } else {
+      out[sec][key] = getVal(el);
+    }
+  });
+  return out;
+}
+
+let timer = null;
+function scheduleSave(){
+  const h = document.getElementById('hint');
+  h.textContent = '正在保存…';
+  clearTimeout(timer);
+  timer = setTimeout(()=>{
+    post({action:'save', config: collect()});
+    h.textContent = '已保存 ✓ 外观类改动需重启生效';
+    setTimeout(()=>{ h.textContent = '改动会自动保存'; }, 2600);
+  }, 320);
+}
+
+/* 交互绑定 */
+document.querySelectorAll('[data-path]').forEach(el=>{
+  const refresh = ()=>{
+    const val = el.parentElement.querySelector('.val');
+    if (val && el.type === 'range') val.textContent = fmt(el, el.value);
+    scheduleSave();
+  };
+  if (el.classList.contains('sw')){
+    el.addEventListener('click', ()=>{ el.classList.toggle('on'); scheduleSave(); });
+  } else {
+    el.addEventListener('input', refresh);
+    el.addEventListener('change', refresh);
+  }
+});
+
+/* 标签页 */
+document.querySelectorAll('nav button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.group').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById('g-' + b.dataset.tab).classList.add('on');
+  });
+});
+
+/* 按钮 */
+document.getElementById('btn-defaults').addEventListener('click', ()=>{
+  if (confirm('恢复默认设置？（会覆盖当前配置）')) post({action:'defaults'});
+});
+document.getElementById('btn-restart').addEventListener('click', ()=> post({action:'restart'}));
+document.getElementById('btn-restart2').addEventListener('click', ()=> post({action:'restart'}));
+document.getElementById('btn-ax').addEventListener('click', ()=>{
+  location.href = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
+});
+document.getElementById('btn-scr').addEventListener('click', ()=>{
+  location.href = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+});
+document.getElementById('btn-onboard').addEventListener('click', ()=>{
+  post({action:'onboard'});
+});
+document.getElementById('btn-diag').addEventListener('click', ()=>{
+  post({action:'diagnostics'});
+});
+document.getElementById('btn-open-cfg').addEventListener('click', ()=>{
+  post({action:'openconfig'});
+});
+/* Python 侧用来提示（比如开机自启的结果） */
+window.__toast = function(msg){
+  const h = document.getElementById('hint');
+  h.textContent = msg;
+  setTimeout(()=>{ h.textContent = '改动会自动保存'; }, 3200);
+};
+
+/* Python 回填配置 */
+window.__loadConfig = function(cfg){
+  document.querySelectorAll('[data-path]').forEach(el=>{
+    const parts = el.dataset.path.split('.');
+    let v = cfg;
+    for (const p of parts){ if (v == null) return; v = v[p]; }
+    if (v === undefined || v === null) return;
+    setVal(el, v);
+  });
+};
+</script>
+</body>
+</html>
