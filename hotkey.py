@@ -43,6 +43,7 @@ class HotkeyMonitor(object):
         self.active = False
         self.swallow_cycle_up = False
         self.enabled = True
+        self._warned = False       # 创建失败只报一次，别让自愈重试刷屏
         self.reverse_shift = True   # Shift+循环键反向（switcher.reverse_with_shift）
 
     @property
@@ -81,13 +82,18 @@ class HotkeyMonitor(object):
             Quartz.kCGHIDEventTap, Quartz.kCGHeadInsertEventTap,
             Quartz.kCGEventTapOptionDefault, mask, self._callback, None)
         if self.tap is None:
-            print("[hotkey] 创建事件监听失败（缺辅助功能权限）", flush=True)
+            # 只在第一次失败时报警：自愈重试每 5 秒调一次，
+            # 次次都打会把日志淹了（实际踩过，~100 行噪音）。
+            if not self._warned:
+                self._warned = True
+                print("[hotkey] 创建事件监听失败（缺辅助功能权限？）", flush=True)
             return False
         src = Quartz.CFMachPortCreateRunLoopSource(None, self.tap, 0)
         Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetCurrent(), src,
                                   Quartz.kCFRunLoopCommonModes)
         Quartz.CGEventTapEnable(self.tap, True)
         self.active = True
+        self._warned = False       # 成功了就复位，下次失败还要报
         return True
 
     def stop(self):

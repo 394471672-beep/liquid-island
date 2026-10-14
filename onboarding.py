@@ -18,7 +18,7 @@ import time
 import objc
 from AppKit import (
     NSApplication, NSBackingStoreBuffered, NSButton, NSColor, NSFont,
-    NSImage, NSImageView, NSMakeRect, NSObject, NSTextField, NSTimer, NSView,
+    NSImage, NSImageView, NSMakeRect, NSObject, NSScreen, NSTextField, NSTimer, NSView,
     NSWindow, NSWindowStyleMaskClosable, NSWindowStyleMaskTitled, NSWorkspace,
 )
 from Foundation import NSURL
@@ -48,6 +48,43 @@ def app_assets_dir():
     所以要顺着可执行文件路径再找一层。两种都要覆盖。
     """
     return os.path.dirname(resource_path("assets", "AppIcon.icns"))
+
+
+def center_on_main(win):
+    """把窗口居中到【主屏】（含菜单栏那块，CGMainDisplayID 对应的屏）。
+
+    ⚠️ 不能用 NSWindow.center()：多屏布局下它可能选到副屏——引导窗、
+    设置窗弹在副屏，用户盯着主屏就等于「毫无反应」（实测踩过：
+    引导窗弹在 x=3240 的副屏，老大在主屏什么都看不到）。
+    ⚠️ PyObjC 方法名：setFrame_display_（不是 setFrame_！后者会解析成
+    不存在的 setFrame: selector，AttributeError 被 except 吞掉后
+    静默 fallback 回 center()——又弹副屏，实测踩过）。
+    """
+    try:
+        from Quartz import CGMainDisplayID
+        main_id = CGMainDisplayID()
+        screens = NSScreen.screens()
+        target = None
+        for s in screens:
+            desc = s.deviceDescription()
+            if desc and desc.get("NSScreenNumber") == main_id:
+                target = s
+                break
+        if target is None:
+            target = screens[0] if screens else None
+        if target is None:
+            win.center()
+            return
+        sf = target.frame()
+        wf = win.frame()
+        x = sf.origin.x + (sf.size.width - wf.size.width) / 2.0
+        y = sf.origin.y + (sf.size.height - wf.size.height) / 2.0
+        win.setFrame_display_(NSMakeRect(x, y, wf.size.width, wf.size.height), True)
+    except Exception:
+        try:
+            win.center()
+        except Exception:
+            pass
 
 
 def _y(top, height):
@@ -187,7 +224,7 @@ class OnboardController(NSObject):
         else:
             core.refresh_perm_cache()
         self.refresh()
-        self.win.center()
+        center_on_main(self.win)
         self.win.makeKeyAndOrderFront_(None)
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
         # 用户在系统设置里勾选后，回到这里状态要自己变绿
@@ -272,7 +309,11 @@ class OnboardController(NSObject):
             self.on_restart()
 
     def windowWillClose_(self, notification):
-        self.finish(mark=True)
+        # 只收窗、停轮询，【不】标 onboarded。
+        # 用户关窗 ≠ 看过引导；而且进程被杀/重启时系统也会发 windowWillClose，
+        # 以前这里 mark 会把 onboarded 误标成 True——之后权限再失效时
+        # 引导逻辑被打乱，用户干瞪眼（实测踩过：fresh 测试反复不弹）。
+        self.finish(mark=False)
 
     @objc.python_method
     def _open(self, url):

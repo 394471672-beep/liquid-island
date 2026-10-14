@@ -24,7 +24,7 @@ from Foundation import NSURL
 import autostart
 import config as cfgmod
 import core
-from onboarding import app_assets_dir
+from onboarding import app_assets_dir, center_on_main
 from version import (APP_NAME, APP_NAME_EN, APP_VERSION, APP_BUILD, COPYRIGHT,
                      REPO_URL)
 
@@ -123,7 +123,7 @@ class AboutController(NSObject):
     def show(self):
         if self.win is None:
             self.build()
-        self.win.center()
+        center_on_main(self.win)
         self.win.makeKeyAndOrderFront_(None)
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
 
@@ -280,7 +280,7 @@ class DiagController(NSObject):
         if self.win is None:
             self.build()
         self.reload()
-        self.win.center()
+        center_on_main(self.win)
         self.win.makeKeyAndOrderFront_(None)
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
 

@@ -23,6 +23,7 @@ from Foundation import NSMakeRect, NSObject, NSURL
 from WebKit import WKWebView, WKWebViewConfiguration, WKUserContentController
 
 import config as cfgmod
+from onboarding import center_on_main
 from resources import resource_path
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,24 @@ HTML = resource_path("prefs.html")
 
 _win = None
 _holder = None      # 保持引用，避免被 GC 掉
+
+
+def _objc_to_py(v):
+    """PyObjC 的 ObjC 容器转 Python 原生容器（深转换）。
+
+    ⚠️ 救命函数：WKScriptMessage.body() 返回的是 `__NSDictionaryM`
+    （ObjC 可变字典），**不是** Python dict——`isinstance(body, dict)`
+    恒为 False，`.items()` 也不存在。以前直接 isinstance 判断导致
+    action/data 解析永远走 else 分支，设置窗里所有操作
+    （保存/恢复默认/重启/打开权限页…）全部静默无反应。
+    """
+    if v is None:
+        return None
+    if hasattr(v, "allKeys") and hasattr(v, "objectForKey_"):
+        return {str(k): _objc_to_py(v.objectForKey_(k)) for k in v.allKeys()}
+    if hasattr(v, "objectAtIndex_") and hasattr(v, "count"):
+        return [_objc_to_py(v.objectAtIndex_(i)) for i in range(v.count())]
+    return v
 
 
 class PrefsBridge(NSObject):
@@ -55,7 +74,10 @@ class PrefsBridge(NSObject):
     # ── WKScriptMessageHandler ────────────────────────────
     def userContentController_didReceiveScriptMessage_(self, ucc, message):
         try:
-            body = message.body()
+            # ⚠️ body 是 __NSDictionaryM（ObjC 字典），必须转成 Python dict，
+            # 否则 isinstance(body, dict) 恒 False → 所有操作静默失效
+            # （设置窗「操作没反应」的根因，1.2.11 修）。
+            body = _objc_to_py(message.body())
             if isinstance(body, dict):
                 action, data = body.get("action"), body.get("config")
             else:
@@ -246,7 +268,7 @@ def open_window(cfg, on_saved=None, on_restart=None, on_quit=None):
         rect, mask, NSBackingStoreBuffered, False)
     win.setTitle_("液态岛 · 设置")
     win.setContentView_(web)
-    win.center()
+    center_on_main(win)
     # ⚠️ 这行是救命的：NSWindow 默认 releasedWhenClosed=YES。
     # 不关掉它的话，用户把设置面板关了 → 窗口对象被系统释放，
     # 而模块里的 _win 还指向那块已释放的内存；下次点「打开设置」

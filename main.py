@@ -628,8 +628,11 @@ class AppAgent(NSObject):
             # （LaunchAgent 拉起的进程尤其常见）或权限刚就绪时会失败，
             # 原来只有引导完成时重试一次——用户看到的就是
             # 「重启后热键时好时坏，还没地方修」。这里持续兜底重试。
+            # ⚠️ 没权限时不重试也不打日志：重试必然失败，只会每 5 秒
+            # 刷一屏「创建事件监听失败」，把日志淹了（实际踩过）。
             if (self.sw_on and self.mon is not None
-                    and not self.mon.running and self._slow_tick % 100 == 0):
+                    and not self.mon.running and self._slow_tick % 100 == 0
+                    and core.has_ax_perm()):
                 try:
                     if self.mon.start():
                         print("[main] 热键监听重试成功", flush=True)
