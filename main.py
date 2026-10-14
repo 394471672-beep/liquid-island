@@ -574,6 +574,10 @@ class AppAgent(NSObject):
         try:
             if act == "openprefs":
                 self.actPrefs_(None)
+                # 展开岛 3 秒作为「App 活着」的可见反馈——用户双击 App 时
+                # 新实例被 flock 挡走，旧实例收到这条通知：开设置 + 展开岛，
+                # 用户立刻明白软件在运行（而不是"双击毫无反应"）。
+                self._intro_island()
             elif act == "reload":
                 self.actReload_(None)
             elif act == "quit":
@@ -679,42 +683,6 @@ class AppAgent(NSObject):
 LOCK_PATH = os.path.join(cfgmod.CONFIG_DIR, "instance.lock")
 _LOCK_FH = None
 
-# 命令行里只要出现任一条，就认定是「另一个液态岛」
-_INSTANCE_PATTERNS = (
-    "liquid_island/main.py",          # 源码直跑
-    "Contents/MacOS/Liquid Island",   # 打包版（/Applications、dist、dmg 都命中）
-    "液态岛.app/Contents/MacOS",
-)
-
-
-def _other_instances():
-    """找出别的液态岛进程 —— 不管它是从源码、/Applications 还是 dmg 里起的。
-
-    为什么原来会漏：老代码只 pgrep `liquid_island/main.py`，而打包后进程的
-    命令行是 `/Applications/液态岛.app/Contents/MacOS/Liquid Island`，
-    跟源码路径八竿子打不着；从 dmg 里直接双击又是 `/Volumes/液态岛/...`
-    这第三条路径。于是三条路各起一个互不认识的实例：菜单栏三个图标、
-    三个岛叠在一起、还各抢一份系统权限 —— 用户看到的就是
-    「右上角怎么有三个液态岛」。
-    """
-    me = os.getpid()
-    hits = []
-    try:
-        out = subprocess.run(["ps", "-ax", "-o", "pid=,command="],
-                             capture_output=True, text=True, timeout=5).stdout
-    except Exception:
-        return hits
-    for line in out.splitlines():
-        pid_str, _, cmd = line.strip().partition(" ")
-        if not pid_str.isdigit():
-            continue
-        pid = int(pid_str)
-        if pid == me:
-            continue
-        if any(p in cmd for p in _INSTANCE_PATTERNS):
-            hits.append((pid, cmd.strip()[:110]))
-    return hits
-
 
 def _acquire_lock():
     """文件锁：比 pgrep 可靠（进程被 kill 时内核自动释放，不会留幽灵锁）。"""
@@ -731,10 +699,11 @@ def _acquire_lock():
 
 
 def _notify_existing():
-    """已经在跑了：让那个实例把设置面板打开。
+    """已经在跑了：让那个实例把设置面板打开 + 展开灵动岛 3 秒。
 
     否则用户再点一次 App 就是彻头彻尾的「毫无反应」——这正是之前最让人
-    抓狂的地方。菜单栏应用没有主窗口，得给个看得见的反馈。
+    抓狂的地方。菜单栏应用没有主窗口，得给个看得见的反馈：岛展开一下，
+    用户立刻知道"软件在跑，只是没有第二个窗口给你开"。
     """
     try:
         NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_(
@@ -766,19 +735,20 @@ def _takeover_and_restart():
 
 def main():
     if "--takeover" in sys.argv:
-        # 接管模式：跳过「已有实例」检查（那个检查会把还没死透的旧实例
-        # 误判成别人，导致重启失败），拿锁成功即继续正常启动。
+        # 接管模式：跳过单实例检查（拿锁成功即继续正常启动）。
         if not _takeover_and_restart():
             print("[main] takeover 超时（旧实例不退？），放弃重启", flush=True)
             return
     else:
-        others = _other_instances()
-        if others:
-            print("[main] 已有实例在跑，本次启动放弃：", others, flush=True)
-            _notify_existing()
-            return
+        # 单实例判定【只】靠 flock：拿不到锁 = 有活进程持锁（内核保证进程死锁
+        # 自动释放，没有幽灵锁），这是最可靠的判定。
+        # ⚠️ 已删除 _other_instances() 的 ps 子串匹配——那是误判源：任何命令行
+        # 里含「液态岛.app/Contents/MacOS」的进程（Bash 工具、终端、编辑器）
+        # 都会被当成"已有实例"，导致双击 App 直接退出 = 用户看到的「打不开」
+        # （老大反复报的 bug。实测铁证：launchd 日志里"已有实例"列表混进过 zsh；
+        # 且该检查先于 flock 执行，只要开发者工具会话在跑，用户双击必失败）。
         if not _acquire_lock():
-            print("[main] 单实例锁被占用，本次启动放弃", flush=True)
+            print("[main] 单实例锁被占用，本次启动放弃（已有实例在运行）", flush=True)
             _notify_existing()
             return
     app = NSApplication.sharedApplication()
