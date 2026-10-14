@@ -48,8 +48,14 @@ class HotkeyMonitor(object):
 
     @property
     def running(self):
-        """热键是否真的挂上了（授权后重试时用它判断）。"""
-        return bool(self.tap is not None and self.active)
+        """热键 tap 是否挂着（自愈重试/状态展示用它判断）。
+
+        ⚠️ 只看 tap 在不在，【不能】把 active 算进来：active 是「hold 键
+        正按着」的瞬时状态，用户没按 Option 时它本来就是 False。旧代码
+        `tap and active` 导致用户不按热键时 running 恒 False → 自愈重试
+        每 5 秒空转一次、日志刷屏（实测踩过，1.2.11 修）。
+        """
+        return bool(self.tap is not None)
 
     # ── 配置 ──────────────────────────────────────────────
     def set_keys(self, hold_key, cycle_key):
@@ -71,6 +77,10 @@ class HotkeyMonitor(object):
     # ── 生命周期 ──────────────────────────────────────────
     def start(self):
         if self.tap is not None:
+            # tap 已挂着（上次 start 成功过）。注意【不要】在这里动 active：
+            # active 是「hold 键正按着」的瞬时状态，强制置 True 会让用户
+            # 没按 Option 时按 Tab 也误触发切换器。
+            self._warned = False
             return True
         mask = (Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
                 | Quartz.CGEventMaskBit(Quartz.kCGEventKeyUp)
