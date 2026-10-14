@@ -314,16 +314,27 @@ class AppAgent(NSObject):
     def actStatusClick_(self, sender):
         """右键点击菜单栏图标 → 弹出与左键同一个菜单。
 
-        ⚠️ 这个方法【绝不能】加 @objc.python_method：那会让 selector 不注册到
-        ObjC 运行时（respondsToSelector_ 返回 False），按钮的 action 找不到方法
-        → 右键点了毫无反应（正是用户反复报的 bug）。必须是普通 def，PyObjC 才会
-        把它暴露成 actStatusClick:。已用实验验证：@objc.python_method 装饰后
-        respondsToSelector_("actStatusClick:") == False。
+        ⚠️ 绝不能加 @objc.python_method（selector 消失→右键静默失效）。
+        ⚠️ 用 NSMenu 通用弹出 API `popUpMenuPositioningItem_atLocation_inView_`，
+        不用 `status_item.popUpStatusItemMenu_`：后者在菜单同时被 setMenu_
+        挂着时表现异常（弹出内容缺失/菜单项点击不派发，老大实测踩雷，
+        1.2.7~1.2.13 反复报的「右键菜单没内容」根因在此）。
+        location 用当前事件的鼠标位置（Cocoa 全局坐标，左下原点，与 API 语义一致）。
         """
         try:
-            self.status_item.popUpStatusItemMenu_(self._status_menu)
+            ev = NSApplication.sharedApplication().currentEvent()
+            loc = ev.mouseLocation() if ev is not None else None
+            if loc is None:
+                self.status_item.popUpStatusItemMenu_(self._status_menu)
+            else:
+                self._status_menu.popUpMenuPositioningItem_atLocation_inView_(
+                    None, loc, None)
         except Exception as e:
             print("[main] 弹出菜单失败:", e, flush=True)
+            try:
+                self.status_item.popUpStatusItemMenu_(self._status_menu)
+            except Exception:
+                pass
 
     @objc.python_method
     def _intro_island(self):
