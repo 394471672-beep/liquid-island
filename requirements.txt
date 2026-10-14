@@ -1,5 +1,0 @@
-# 从源码运行所需（打包走 ./build.sh，它会在独立 venv 里自己装好）
-pyobjc-framework-Cocoa
-pyobjc-framework-Quartz
-pyobjc-framework-WebKit
-pyobjc-framework-ApplicationServices
